@@ -8,6 +8,9 @@ from datetime import datetime, timezone
 from fide_titles import FIDE_TITLES, TC_MAP
 from config import LICHESS_TOKEN
 
+# Lichess time controls that map to FIDE categories
+LICHESS_TIME_CONTROLS = ["bullet", "blitz", "rapid", "classical", "correspondence"]
+
 _LICHESS_HEADERS = {"Authorization": f"Bearer {LICHESS_TOKEN}"} if LICHESS_TOKEN else {}
 
 # ── IPv4‑forced connector (Lichess IPv6 is flaky on this server) ─────
@@ -140,7 +143,19 @@ async def _lich_user_title(session, username: str) -> Optional[str]:
 
 
 async def fetch_lichess_games(username: str, max_games: int = 200, progress=None) -> list[GameRecord]:
-    """Fetch ALL games for a user from Lichess."""
+    """Fetch latest 200 games per time control from Lichess (across all time controls)."""
+    all_games: list[GameRecord] = []
+    
+    for perf_type in LICHESS_TIME_CONTROLS:
+        games = await _fetch_lichess_games_perf(username, perf_type, max_games, progress)
+        all_games.extend(games)
+    
+    all_games.sort(key=lambda g: g.date)
+    return all_games
+
+
+async def _fetch_lichess_games_perf(username: str, perf_type: str, max_games: int = 200, progress=None) -> list[GameRecord]:
+    """Fetch games for a specific time control (perfType) from Lichess."""
     games: list[GameRecord] = []
 
     async with _make_session() as session:
@@ -151,6 +166,7 @@ async def fetch_lichess_games(username: str, max_games: int = 200, progress=None
             "evals": "false",
             "moves": "false",
             "sort": "dateDesc",
+            "perfType": perf_type,
         }
 
         async for raw in _lich_stream(session, LICHESS_GAMES_URL.format(username=username), params):
@@ -159,13 +175,11 @@ async def fetch_lichess_games(username: str, max_games: int = 200, progress=None
                 if rec:
                     games.append(rec)
                     if progress and len(games) % 25 == 0:
-                        await progress("fetch", f"Загружено {len(games)} партий...", 5 + int(len(games) / max(max_games, 1) * 20))
+                        await progress("fetch", f"[{perf_type}] Загружено {len(games)} партий...", 5 + int(len(games) / max(max_games, 1) * 20))
             except Exception:
                 continue
 
     games.sort(key=lambda g: g.date)
-    if progress:
-        await progress("fetch", f"Загружено {len(games)} партий", 25)
     return games
 
 
@@ -238,6 +252,92 @@ CHESSCOM_ARCHIVES_URL = "https://api.chess.com/pub/player/{username}/games/archi
 CHESSCOM_USER_URL = "https://api.chess.com/pub/player/{username}"
 
 
+
+
+# Default FIDE ratings based on title (used when player lookup fails)
+FIDE_TITLE_RATINGS = {
+    "GM": 2500,  # Grandmaster
+    "WGM": 2300, # Woman Grandmaster  
+    "IM": 2400,  # International Master
+    "WIM": 2200, # Woman International Master
+    "FM": 2300,  # FIDE Master
+    "WFM": 2100, # Woman FIDE Master
+    "CM": 2200,  # Candidate Master
+    "WCM": 2000, # Woman Candidate Master
+    "NM": 2100,  # National Master (Lichess)
+}
+
+
+
+
+
+async def _lookup_fide_by_realname(session, real_name: str, platform_title: Optional[str] = None, username_hint: Optional[str] = None) -> Optional[tuple[int, str]]:
+    """
+    Look up FIDE rating for a player using their real name from Lichess profile.
+    
+    Returns tuple of (fide_rating, found_title) if found, None otherwise.
+    Uses profile.realName field from Lichess API to match players.
+    
+    Args:
+        real_name: The player's real name (from profile.realName)
+        platform_title: The player's title from the platform (e.g., "GM", "FM", etc.)
+        username_hint: The player's username on the platform (for logging/debugging)
+    """
+    if not real_name or not real_name.strip():
+        return None
+    
+    real_name_lower = real_name.strip().lower()
+    
+    # First priority: Try to get player info from Lichess API using real name as hint
+    try:
+        # We can't directly search Lichess by real name, but we can try to
+        # use the username_hint if available to get profile info
+        if username_hint:
+            user_data = await _lich_get_user(session, username_hint)
+            if user_data:
+                profile = user_data.get("profile", {})
+                # Check if the stored real name matches our target
+                stored_real_name = profile.get("realName", "")
+                if stored_real_name and stored_real_name.strip().lower() == real_name_lower:
+                    # Found matching profile!
+                    title = user_data.get("title") or ""
+                    # Try to get FIDE rating from Lichess profile
+                    fide_rating = user_data.get("fideRating")
+                    if fide_rating and isinstance(fide_rating, (int, float)) and fide_rating > 0:
+                        return int(fide_rating), title
+                    
+                    # If no FIDE rating in Lichess, use default based on title
+                    if title:
+                        title_upper = title.upper()
+                        if title_upper in FIDE_TITLE_RATINGS:
+                            return FIDE_TITLE_RATINGS[title_upper], title
+                        # Handle common title patterns
+                        for t, r in FIDE_TITLE_RATINGS.items():
+                            if title_upper.startswith(t):
+                                return r, title
+    except Exception:
+        pass
+    
+    # Second priority: Use default rating based on title if available
+    if platform_title:
+        platform_title_upper = platform_title.upper()
+        if platform_title_upper in FIDE_TITLE_RATINGS:
+            return FIDE_TITLE_RATINGS[platform_title_upper], platform_title
+        
+        # Handle common title patterns
+        for title, rating in FIDE_TITLE_RATINGS.items():
+            if platform_title_upper.startswith(title):
+                return rating, title
+    
+    # Fallback: Use generic rating based on title if we can infer it
+    if real_name_lower:
+        # Simple heuristic: if name contains common patterns, infer title
+        # This is a fallback mechanism - better to have no rating than wrong one
+        pass
+    
+    # No match found
+    return None
+
 async def _cc_get_user(session, username: str) -> dict:
     try:
         async with session.get(CHESSCOM_USER_URL.format(username=username),
@@ -264,7 +364,7 @@ async def _cc_opponent_fide(session, username: str) -> Optional[int]:
 
 
 async def fetch_chesscom_games(username: str, max_games: int = 200, progress=None) -> list[GameRecord]:
-    """Fetch ALL games for a user from Chess.com (month by month)."""
+    """Fetch latest 200 games for a user from Chess.com (sorted by date descending)."""
     games: list[GameRecord] = []
 
     async with _make_session() as session:
@@ -275,9 +375,35 @@ async def fetch_chesscom_games(username: str, max_games: int = 200, progress=Non
                 return games
             archives = (await resp.json()).get("archives", [])
 
-        # Only fetch recent months if max_games is set
+        # Only fetch recent months to get latest games (most recent first)
         if max_games and max_games < 500:
             archives = archives[-3:]  # last 3 months
+
+        # Fetch archives in reverse order (most recent first) to get latest games
+        for url in reversed(archives):
+            if max_games and len(games) >= max_games:
+                break
+            try:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                    if resp.status != 200:
+                        continue
+                    data = await resp.json()
+                    # Parse games in reverse order (most recent first)
+                    for raw in reversed(data.get("games", [])):
+                        if max_games and len(games) >= max_games:
+                            break
+                        try:
+                            rec = _parse_chesscom_game(raw, username)
+                            if rec:
+                                games.append(rec)
+                                if progress and len(games) % 25 == 0:
+                                    await progress("fetch", f"Загружено {len(games)} партий...", 5 + int(len(games) / max(max_games, 1) * 20))
+                        except Exception:
+                            continue
+            except (asyncio.TimeoutError, aiohttp.ClientError):
+                continue
+            await asyncio.sleep(0.1)  # be nice
+
 
         # Fetch archives (stop early if we have enough)
         for url in archives:

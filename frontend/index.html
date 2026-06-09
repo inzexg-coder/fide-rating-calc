@@ -197,7 +197,7 @@ tr:hover td { background: #12121a; }
       </div>
     </div>
 
-    <div class="anchors-section" id="anchorsSection">
+    <div class="anchors-section" id="anchorsSection" style="display:none;">
       <h3>Якоря (титулованные соперники с FIDE рейтингом)</h3>
       <div class="anchors-table-wrap">
         <table>
@@ -517,10 +517,10 @@ function showResults(data) {
     const platRating = tcData.user_platform_rating || '—';
 
     let badgeHtml = '<span class="badge badge-accuracy">по точности</span>';
-    if (tcData.has_anchors && tcData.direct_anchors > 0) {
-      badgeHtml = '<span class="badge badge-anchors">' + tcData.direct_anchors + ' якоря</span>';
+    if (tcData.has_anchors && tcData.direct analysiss > 0) {
+      badgeHtml = '<span class="badge badge-anchors">' + tcData.direct analysiss + ' ссылки</span>';
     } else if (tcData.has_anchors) {
-      badgeHtml = '<span class="badge badge-anchors">' + tcData.total_anchors + ' якоря</span>';
+      badgeHtml = '<span class="badge badge-anchors">' + tcData.total analysiss + ' ссылки</span>';
     }
 
     card.innerHTML =
@@ -638,7 +638,7 @@ function renderChart(tc) {
   });
 }
 
-function renderAnchors(data) {
+function renderReferences(data) {
   const tbody = document.getElementById('anchorsBody');
   const section = document.getElementById('anchorsSection');
   tbody.innerHTML = '';

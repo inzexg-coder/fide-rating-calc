@@ -1,4 +1,4 @@
-FIDE_TITLES = {"CM", "FM", "IM", "GM", "WCM", "WFM", "WIM", "WGM"}
+FIDE_TITLES = {"CM", "FM", "IM", "GM", "WCM", "WFM", "WIM", "WGM", "NM"}
 
 # Map platform time controls to FIDE categories
 TC_MAP = {
