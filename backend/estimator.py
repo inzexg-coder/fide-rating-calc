@@ -154,11 +154,10 @@ class Estimator:
         # Ensure ascending date order
         games.sort(key=lambda g: g.date)
 
-        # Merge bullet→blitz and correspondence→classical for unified display
+        # Merge correspondence→classical for unified display, skip bullet
+        games = [g for g in games if g.time_class != "bullet"]
         for g in games:
-            if g.time_class == "bullet":
-                g.time_class = "blitz"
-            elif g.time_class == "correspondence":
+            if g.time_class == "correspondence":
                 g.time_class = "classical"
 
         by_tc = {}
@@ -208,11 +207,10 @@ class Estimator:
             await self._report("error", "Партий не найдено", 100)
             return {"error": "No games found", "games_count": 0}
 
-        # Merge bullet→blitz and correspondence→classical for unified display
+        # Merge correspondence→classical for unified display, skip bullet
+        games = [g for g in games if g.time_class != "bullet"]
         for g in games:
-            if g.time_class == "bullet":
-                g.time_class = "blitz"
-            elif g.time_class == "correspondence":
+            if g.time_class == "correspondence":
                 g.time_class = "classical"
 
         by_tc = {}

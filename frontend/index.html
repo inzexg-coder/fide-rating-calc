@@ -267,7 +267,8 @@ function showError(msg) {
 
 async function fetchLichessGames(username) {
   const maxGames = 200;
-  const url = `https://lichess.org/api/games/user/${encodeURIComponent(username)}?max=${maxGames}&accuracy=true&sort=dateDesc`;
+  const now = Date.now();
+  const url = `https://lichess.org/api/games/user/${encodeURIComponent(username)}?max=${maxGames}&accuracy=true&sort=dateDesc&until=${now}`;
   const games = [];
 
   updateProgress(2, 'Подключение к Lichess...');
@@ -339,8 +340,9 @@ function parseLichessGame(raw, targetUser) {
   const userAcc = (user.analysis || {}).accuracy || null;
   const oppAcc = (opp.analysis || {}).accuracy || null;
 
-  // Map bullet→blitz, correspondence→classical
-  const tc = speed === 'bullet' ? 'blitz' : speed === 'correspondence' ? 'classical' : speed;
+  // Skip bullet, map correspondence→classical
+  if (speed === 'bullet') return null;
+  const tc = speed === 'correspondence' ? 'classical' : speed;
 
   return {
     game_id: raw.id || '', date, speed, time_class: tc,
@@ -361,14 +363,15 @@ async function startAnalysis() {
 
   document.getElementById('results').classList.remove('active');
   document.getElementById('errorMsg').classList.remove('active');
+  document.getElementById('errorMsg').textContent = '';
   document.getElementById('progressSection').classList.add('active');
   document.getElementById('goBtn').disabled = true;
   if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
 
-  try {
-    if (platform === 'lichess') {
+  if (platform === 'lichess') {
+    try {
       const games = await fetchLichessGames(username);
-      if (games.length === 0) { showError('Не удалось загрузить партии.'); return; }
+      if (games.length === 0) { showError('Не удалось загрузить партии.'); document.getElementById('goBtn').disabled = false; return; }
 
       updateProgress(30, 'Отправка на сервер...');
       const resp = await fetch('/api/estimate/games', {
@@ -384,17 +387,33 @@ async function startAnalysis() {
       const result = await resp.json();
       updateProgress(100, 'Готово!');
       showResults(result);
-    } else {
-      // Chess.com — SSE from backend
-      updateProgress(5, 'Загрузка партий с Chess.com...');
-      const resp = await fetch('/api/estimate/stream?platform=chesscom&username=' + encodeURIComponent(username));
-      // Not using SSE, just use POST
-      showError('Chess.com временно через direct. Используйте Lichess.');
+    } catch (err) {
+      showError(String(err.message || err));
+    } finally {
+      document.getElementById('goBtn').disabled = false;
     }
-  } catch (err) {
-    showError(String(err.message || err));
-  } finally {
-    document.getElementById('goBtn').disabled = false;
+  } else {
+    // Chess.com — SSE from backend (server can reach Chess.com API)
+    const evtSource = new EventSource('/api/estimate/stream?platform=chesscom&username=' + encodeURIComponent(username));
+    evtSource.addEventListener('progress', e => {
+      try { const d = JSON.parse(e.data); updateProgress(d.percent, d.message); } catch {}
+    });
+    evtSource.addEventListener('result', e => {
+      evtSource.close();
+      document.getElementById('goBtn').disabled = false;
+      updateProgress(100, 'Готово!');
+      try { showResults(JSON.parse(e.data)); } catch {}
+    });
+    evtSource.addEventListener('error', e => {
+      evtSource.close();
+      document.getElementById('goBtn').disabled = false;
+      let msg = 'Ошибка сервера';
+      try { const d = JSON.parse(e.data); msg = d.detail || d.message; } catch (ex) { msg = e.message || msg; }
+      showError(msg);
+    });
+    setTimeout(() => {
+      if (evtSource) { evtSource.close(); document.getElementById('goBtn').disabled = false; showError('Превышено время ожидания.'); }
+    }, 300000);
   }
 }
 
