@@ -107,13 +107,13 @@ async def fetch_lichess_games(username: str, max_games: int = 200, progress=None
                 if rec:
                     games.append(rec)
                     if progress and len(games) % 25 == 0:
-                        await progress("fetch", f"Загружено {len(games)} партий...", min(5 + int(len(games)/max_games*10), 14))
+                        await progress("fetch", f"Загружено {len(games)} партий...", 5 + int(len(games) / max(max_games, 1) * 20))
             except Exception:
                 continue
 
     games.sort(key=lambda g: g.date)
     if progress:
-        await progress("fetch", f"Загружено {len(games)} партий", 14)
+        await progress("fetch", f"Загружено {len(games)} партий", 25)
     return games
 
 
@@ -229,7 +229,7 @@ async def fetch_chesscom_games(username: str, max_games: int = 200, progress=Non
                         if rec:
                             games.append(rec)
                             if progress and len(games) % 25 == 0:
-                                await progress("fetch", f"Загружено {len(games)} партий...", min(5 + int(len(games)/max_games*10), 14))
+                                await progress("fetch", f"Загружено {len(games)} партий...", 5 + int(len(games) / max(max_games, 1) * 20))
                     except Exception:
                         continue
             await asyncio.sleep(0.3)  # be nice
