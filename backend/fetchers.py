@@ -11,12 +11,14 @@ from config import LICHESS_TOKEN
 _LICHESS_HEADERS = {"Authorization": f"Bearer {LICHESS_TOKEN}"} if LICHESS_TOKEN else {}
 
 # ── IPv4‑forced connector (Lichess IPv6 is flaky on this server) ─────
-_IPV4_CONNECTOR = aiohttp.TCPConnector(family=socket.AF_INET, force_close=True)
+# IPv4 connector created lazily inside _make_session
 
 
 def _make_session() -> aiohttp.ClientSession:
     """Return a ClientSession that forces IPv4."""
-    return aiohttp.ClientSession(connector=_IPV4_CONNECTOR, timeout=aiohttp.ClientTimeout(total=120))
+    import socket
+    conn = aiohttp.TCPConnector(family=socket.AF_INET, force_close=True)
+    return aiohttp.ClientSession(connector=conn, timeout=aiohttp.ClientTimeout(total=120))
 
 
 class GameRecord:
