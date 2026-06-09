@@ -153,9 +153,9 @@ class Estimator:
     async def estimate(self, platform: str, username: str) -> dict:
         await self._report("fetch", f"Загрузка партий с {platform}...", 5)
         if platform == "lichess":
-            games = await fetch_lichess_games(username)
+            games = await fetch_lichess_games(username, progress=self._progress)
         elif platform == "chesscom":
-            games = await fetch_chesscom_games(username)
+            games = await fetch_chesscom_games(username, progress=self._progress)
             await enrich_chesscom_titles(games)
         else:
             raise ValueError(f"Unknown platform: {platform}")

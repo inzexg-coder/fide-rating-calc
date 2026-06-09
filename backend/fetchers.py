@@ -86,7 +86,7 @@ async def _lich_profile_fide(session, username: str) -> Optional[int]:
     return None
 
 
-async def fetch_lichess_games(username: str, max_games: int = 500) -> list[GameRecord]:
+async def fetch_lichess_games(username: str, max_games: int = 200, progress=None) -> list[GameRecord]:
     """Fetch ALL games for a user from Lichess."""
     games: list[GameRecord] = []
     user_color_map = {}  # cache: opponent -> user's color in the game
@@ -106,10 +106,14 @@ async def fetch_lichess_games(username: str, max_games: int = 500) -> list[GameR
                 rec = _parse_lichess_game(raw, username)
                 if rec:
                     games.append(rec)
+                    if progress and len(games) % 25 == 0:
+                        await progress("fetch", f"Загружено {len(games)} партий...", min(5 + int(len(games)/max_games*10), 14))
             except Exception:
                 continue
 
     games.sort(key=lambda g: g.date)
+    if progress:
+        await progress("fetch", f"Загружено {len(games)} партий", 14)
     return games
 
 
@@ -193,7 +197,7 @@ async def _cc_user_name(session, username: str) -> str:
     return data.get("name", username)
 
 
-async def fetch_chesscom_games(username: str, max_games: int = 500) -> list[GameRecord]:
+async def fetch_chesscom_games(username: str, max_games: int = 200, progress=None) -> list[GameRecord]:
     """Fetch ALL games for a user from Chess.com (month by month)."""
     games: list[GameRecord] = []
 
@@ -224,9 +228,11 @@ async def fetch_chesscom_games(username: str, max_games: int = 500) -> list[Game
                         rec = _parse_chesscom_game(raw, username)
                         if rec:
                             games.append(rec)
+                            if progress and len(games) % 25 == 0:
+                                await progress("fetch", f"Загружено {len(games)} партий...", min(5 + int(len(games)/max_games*10), 14))
                     except Exception:
                         continue
-            await asyncio.sleep(0.5)  # be nice
+            await asyncio.sleep(0.3)  # be nice
 
     games.sort(key=lambda g: g.date)
     return games
