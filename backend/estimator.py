@@ -276,29 +276,25 @@ class Estimator:
                     fake_anchor = self._make_crowd_anchor(games, crowd, fide_cat)
                     all_anchors = [fake_anchor]
 
-        # Step 5: Regression fallback — if still NO anchors, use pure regression
-        use_regression = False
-        if not all_anchors:
-            use_regression = True
-            await self._report("estimate", "Ничего не найдено. Использую регрессионную формулу...", 80)
-            # Build synthetic daily estimates via regression
+        # Step 5: If still NO anchors, use accuracy-adjusted formula
+        has_anchors = bool(all_anchors)
+        if not has_anchors:
+            await self._report("estimate", "Построение графика на основе точности и рейтинга...", 80)
             daily = self._build_regression_daily(games, platform, tc, fide_cat)
         else:
-            # Build daily chart from anchors
             daily = self._build_daily_estimates(games, all_anchors)
 
         await self._report("estimate", f"Построение графика по {len(daily)} точкам...", 85)
 
-        current = None
+        current_fide = None
+        max_fide = None
+        user_rating = None
         valid_days = [d for d in daily if d.estimated_fide is not None]
         if valid_days:
             last = valid_days[-1]
-            current = {
-                "estimated_fide": int(round(last.estimated_fide)),
-                "user_platform_rating": last.user_platform_rating,
-                "num_anchors": last.num_anchors,
-                "avg_offset": round(last.avg_offset, 1),
-            }
+            current_fide = int(round(last.estimated_fide))
+            user_rating = last.user_platform_rating
+            max_fide = max(int(round(d.estimated_fide)) for d in valid_days)
 
         return {
             "time_class": tc,
@@ -306,11 +302,11 @@ class Estimator:
             "total_games": len(games),
             "direct_anchors": len([a for a in all_anchors if a.direct and a.is_titled]),
             "indirect_anchors": len([a for a in all_anchors if not a.direct]),
-            "nontitled_anchors": len([a for a in all_anchors if not a.is_titled]),
-            "crowd_fallback": not all_anchors or (len(all_anchors) == 1 and not all_anchors[0].game_id),
-            "regression_fallback": use_regression,
             "total_anchors": len(all_anchors),
-            "current_estimate": current,
+            "has_anchors": has_anchors,
+            "current_fide": current_fide,
+            "max_fide": max_fide,
+            "user_platform_rating": user_rating,
             "anchors": [a.to_dict() for a in all_anchors],
             "daily_estimates": [d.to_dict() for d in daily],
         }
@@ -576,17 +572,24 @@ class Estimator:
 
     def _build_regression_daily(self, games: list, platform: str,
                                  tc: str, fide_cat: str) -> list:
-        """Build daily estimates using pure regression formula."""
+        """Build daily estimates using accuracy-adjusted formula.
+        High accuracy → FIDE closer to platform rating.
+        Low accuracy → FIDE lower.
+        Uses last 200 games accuracy stats."""
+        # Pre‑compute overall accuracy stats for this TC
+        all_accs = [g.user_accuracy for g in games if g.user_accuracy is not None]
+        avg_acc = sum(all_accs) / len(all_accs) / 100.0 if all_accs else 0.5
+
         daily = []
         for game in games:
             if game.user_rating:
                 fide = estimate_via_regression(platform, tc, fide_cat, game.user_rating)
-                # Adjust by accuracy
-                if fide and game.user_accuracy:
-                    acc = game.user_accuracy / 100.0
-                    # High accuracy → slightly higher FIDE
-                    acc_mult = 1.0 + (acc - 0.5) * 0.3
-                    fide = int(round(fide * acc_mult))
+                if fide:
+                    # Accuracy adjustment: higher acc → higher FIDE
+                    # acc 0.5 → 1.0x,  acc 1.0 → 1.12x,  acc 0.0 → 0.85x
+                    acc = (game.user_accuracy / 100.0) if game.user_accuracy is not None else avg_acc
+                    mult = 0.85 + acc * 0.3  # 0.85 - 1.15 range
+                    fide = max(int(round(fide * mult)), 100)
             else:
                 fide = None
 

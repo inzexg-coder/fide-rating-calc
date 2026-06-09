@@ -7,85 +7,152 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f13; color: #e0e0e0; min-height: 100vh; }
-.container { max-width: 1200px; margin: 0 auto; padding: 40px 20px; }
-h1 { font-size: 32px; font-weight: 700; color: #fff; margin-bottom: 8px; }
-h1 span { background: linear-gradient(135deg, #7c3aed, #2563eb); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-.subtitle { color: #888; margin-bottom: 32px; font-size: 14px; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #0a0a0f;
+  color: #e0e0e0;
+  min-height: 100vh;
+}
+.container { max-width: 960px; margin: 0 auto; padding: 40px 20px; }
 
-.input-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 20px; }
-.platform-btn { padding: 10px 20px; border: 2px solid #333; border-radius: 8px; background: #1a1a20; color: #888; cursor: pointer; font-size: 14px; font-weight: 600; transition: all .2s; }
-.platform-btn.active { border-color: #7c3aed; color: #fff; background: #2a1a3e; }
-.platform-btn:hover { border-color: #555; }
-input[type="text"] { flex: 1; min-width: 200px; padding: 12px 16px; border: 2px solid #333; border-radius: 8px; background: #1a1a20; color: #fff; font-size: 16px; outline: none; transition: border-color .2s; }
+/* ── Header ── */
+.header { text-align: center; margin-bottom: 40px; }
+.header h1 {
+  font-size: 28px; font-weight: 700; color: #fff; margin-bottom: 6px;
+  letter-spacing: -0.3px;
+}
+.header h1 span { color: #a78bfa; }
+.header .subtitle { color: #666; font-size: 13px; }
+
+/* ── Input row ── */
+.input-row {
+  display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+  background: #12121a; border: 1px solid #1e1e2a; border-radius: 12px;
+  padding: 16px 20px; margin-bottom: 24px;
+}
+.platform-btn {
+  padding: 8px 18px; border: 1px solid #2a2a3a; border-radius: 8px;
+  background: #1a1a24; color: #666; cursor: pointer; font-size: 13px;
+  font-weight: 500; transition: all .2s;
+}
+.platform-btn.active { border-color: #7c3aed; color: #c4b5fd; background: #1f1530; }
+.platform-btn:hover { border-color: #4a4a5a; }
+input[type="text"] {
+  flex: 1; min-width: 160px; padding: 10px 14px;
+  border: 1px solid #2a2a3a; border-radius: 8px; background: #0a0a0f;
+  color: #e0e0e0; font-size: 15px; outline: none; transition: border-color .2s;
+}
 input[type="text"]:focus { border-color: #7c3aed; }
-.btn-go { padding: 12px 32px; border: none; border-radius: 8px; background: linear-gradient(135deg, #7c3aed, #2563eb); color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; transition: opacity .2s; }
-.btn-go:disabled { opacity: .5; cursor: not-allowed; }
+.btn-go {
+  padding: 10px 28px; border: none; border-radius: 8px;
+  background: linear-gradient(135deg, #7c3aed, #6366f1);
+  color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
+  transition: opacity .2s;
+}
+.btn-go:disabled { opacity: .4; cursor: not-allowed; }
 .btn-go:hover:not(:disabled) { opacity: .9; }
 
 /* ── Progress ── */
-.progress-section { display: none; margin-bottom: 24px; }
+.progress-section { display: none; margin-bottom: 28px; }
 .progress-section.active { display: block; }
-.progress-bar-bg { width: 100%; height: 8px; background: #2a2a32; border-radius: 4px; overflow: hidden; }
-.progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, #7c3aed, #2563eb); border-radius: 4px; transition: width 0.5s ease; }
+.progress-bar-bg {
+  width: 100%; height: 6px; background: #1e1e2a; border-radius: 3px; overflow: hidden;
+}
+.progress-bar {
+  height: 100%; width: 0%; background: linear-gradient(90deg, #7c3aed, #6366f1);
+  border-radius: 3px; transition: width 0.4s ease;
+}
 .progress-status { display: flex; justify-content: space-between; margin-top: 8px; font-size: 13px; }
-.progress-msg { color: #aaa; }
+.progress-msg { color: #888; }
 .progress-pct { color: #555; font-weight: 600; }
-.progress-steps { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; }
-.progress-step { font-size: 12px; color: #555; padding: 4px 8px; border-left: 2px solid #2a2a32; }
-.progress-step.active { color: #4ade80; border-left-color: #4ade80; }
-.progress-step.done { color: #666; border-left-color: #7c3aed; }
-.progress-step.error { color: #f87171; border-left-color: #ef4444; }
 
-.error { display: none; padding: 16px; background: #2d1414; border: 1px solid #ef4444; border-radius: 8px; color: #f87171; margin-bottom: 24px; }
+/* ── Error ── */
+.error { display: none; padding: 14px 18px; background: #1f0f0f; border: 1px solid #7f1d1d; border-radius: 10px; color: #fca5a5; margin-bottom: 24px; font-size: 14px; }
 .error.active { display: block; }
 
+/* ── Results ── */
 .results { display: none; }
 .results.active { display: block; }
 
-.tc-info { font-size: 13px; color: #888; margin-bottom: 20px; padding: 12px 16px; background: #1a1a20; border-radius: 8px; text-align: center; }
+.results-header {
+  text-align: center; margin-bottom: 28px;
+}
+.results-header .username { font-size: 22px; font-weight: 700; color: #fff; }
+.results-header .stats { font-size: 13px; color: #666; margin-top: 4px; }
 
-.tc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 32px; }
-.tc-card { background: #1a1a20; border: 1px solid #2a2a32; border-radius: 12px; padding: 20px; text-align: center; position: relative; }
-.tc-card .title { font-size: 14px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
-.tc-card .fide-cat { font-size: 11px; color: #555; margin-bottom: 12px; }
-.tc-card .rating { font-size: 42px; font-weight: 700; color: #fff; margin-bottom: 4px; }
-.tc-card .rating.none { color: #555; }
-.tc-card .platform-rating { font-size: 14px; color: #666; margin-bottom: 8px; }
-.tc-card .meta { font-size: 12px; color: #555; }
-.tc-card .meta span { display: inline-block; margin: 0 6px; }
-.tc-card .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
-.badge-direct { background: #1a3a1a; color: #4ade80; }
-.badge-indirect { background: #1a1a2e; color: #60a5fa; }
-.badge-none { background: #2a1a1a; color: #f87171; }
-.badge-regression { background: #2a2a1a; color: #facc15; }
-.tc-card .offset-info { font-size: 12px; color: #60a5fa; margin-top: 4px; }
-.tc-card .fallback-badge { position: absolute; top: 8px; right: 8px; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; background: #2a2a1a; color: #facc15; border: 1px solid #555; }
+/* ── TC Cards ── */
+.tc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px; margin-bottom: 28px;
+}
+.tc-card {
+  background: #12121a; border: 1px solid #1e1e2a; border-radius: 12px;
+  padding: 20px; text-align: center; position: relative;
+  transition: border-color .2s;
+}
+.tc-card:hover { border-color: #2a2a3e; }
+.tc-card .tc-name { font-size: 11px; color: #555; text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 3px; }
+.tc-card .tc-cat { font-size: 11px; color: #3a3a4a; margin-bottom: 14px; }
+.tc-card .fide-current {
+  font-size: 38px; font-weight: 700; color: #c4b5fd; line-height: 1.1;
+}
+.tc-card .fide-max {
+  font-size: 13px; color: #555; margin-top: 2px;
+}
+.tc-card .fide-max b { color: #888; }
+.tc-card .platform-rating {
+  font-size: 13px; color: #555; margin-top: 10px; padding-top: 10px;
+  border-top: 1px solid #1a1a26;
+}
+.tc-card .meta { font-size: 11px; color: #444; margin-top: 6px; }
+.tc-card .meta span { display: inline-block; margin: 0 4px; }
+.tc-card .badge {
+  display: inline-block; padding: 2px 8px; border-radius: 4px;
+  font-size: 10px; font-weight: 600;
+}
+.badge-anchors { background: #1a1a2e; color: #818cf8; }
+.badge-accuracy { background: #1a2a1a; color: #6ee7b7; }
+.tc-card.indirect .badge { background: #1e1a2a; color: #a78bfa; }
 
-.chart-container { background: #1a1a20; border: 1px solid #2a2a32; border-radius: 12px; padding: 20px; margin-bottom: 24px; }
-.chart-container h3 { font-size: 16px; margin-bottom: 16px; color: #ccc; }
-.tc-tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-.tc-tab { padding: 6px 16px; border: 1px solid #333; border-radius: 6px; background: transparent; color: #888; cursor: pointer; font-size: 13px; transition: all .2s; }
-.tc-tab.active { border-color: #7c3aed; color: #fff; background: #2a1a3e; }
-.tc-tab:hover { border-color: #555; }
-.tc-tab .count { color: #555; font-size: 11px; margin-left: 4px; }
-.chart-wrap { position: relative; height: 400px; }
+/* ── Chart ── */
+.chart-section { margin-bottom: 28px; }
+.chart-section .chart-header {
+  display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap;
+}
+.chart-section .chart-header h3 { font-size: 15px; color: #aaa; font-weight: 500; }
+.tc-tab {
+  padding: 5px 14px; border: 1px solid #2a2a3a; border-radius: 6px;
+  background: transparent; color: #666; cursor: pointer; font-size: 12px;
+  transition: all .2s;
+}
+.tc-tab.active { border-color: #7c3aed; color: #c4b5fd; background: #1f1530; }
+.tc-tab:hover { border-color: #4a4a5a; }
+.tc-tab .count { color: #444; font-size: 10px; }
+.chart-wrap { position: relative; height: 350px; background: #12121a; border: 1px solid #1e1e2a; border-radius: 12px; padding: 16px; }
 
+/* ── Anchors table ── */
 .anchors-section { margin-top: 24px; }
-.anchors-section h3 { font-size: 16px; margin-bottom: 12px; color: #ccc; }
+.anchors-section h3 { font-size: 14px; color: #888; margin-bottom: 12px; font-weight: 500; }
 .anchors-table-wrap { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { text-align: left; padding: 10px 8px; border-bottom: 1px solid #2a2a32; color: #555; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
-td { padding: 8px; border-bottom: 1px solid #1a1a20; }
-tr:hover td { background: #1a1a20; }
-.fide-val { color: #4ade80; font-weight: 600; }
-.offset-val { color: #60a5fa; font-weight: 600; }
-.direct-badge { color: #4ade80; }
-.indirect-badge { color: #60a5fa; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th {
+  text-align: left; padding: 8px 6px; border-bottom: 1px solid #1a1a26;
+  color: #555; font-weight: 500; font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+td { padding: 7px 6px; border-bottom: 1px solid #12121a; color: #999; }
+tr:hover td { background: #12121a; }
+.fide-col { color: #a78bfa; font-weight: 600; }
+.offset-col { color: #818cf8; }
+
+/* ── Empty state ── */
+.empty-state { text-align: center; padding: 40px 20px; color: #555; font-size: 14px; }
+.empty-state p { margin-top: 8px; }
 
 @media (max-width: 640px) {
   .container { padding: 20px 12px; }
-  h1 { font-size: 24px; }
+  .header h1 { font-size: 22px; }
   .input-row { flex-direction: column; }
   input[type="text"] { width: 100%; }
   .btn-go { width: 100%; }
@@ -95,13 +162,15 @@ tr:hover td { background: #1a1a20; }
 </head>
 <body>
 <div class="container">
-  <h1>♟ <span>FIDE<span style="-webkit-text-fill-color:#888;"> Rating</span> Estimator</span></h1>
-  <p class="subtitle">Оценка FIDE рейтинга на основе партий с Lichess / Chess.com</p>
+  <div class="header">
+    <h1><span>FIDE</span> Rating Estimator</h1>
+    <p class="subtitle">Оценка FIDE рейтинга по партиям с Lichess / Chess.com</p>
+  </div>
 
   <div class="input-row">
-    <button class="platform-btn active" data-platform="lichess">♟ Lichess</button>
-    <button class="platform-btn" data-platform="chesscom">☕ Chess.com</button>
-    <input type="text" id="usernameInput" placeholder="Введите никнейм..." value="Torii35">
+    <button class="platform-btn active" data-platform="lichess">Lichess</button>
+    <button class="platform-btn" data-platform="chesscom">Chess.com</button>
+    <input type="text" id="usernameInput" placeholder="Никнейм..." value="Torii35">
     <button class="btn-go" id="goBtn">Анализировать</button>
   </div>
 
@@ -114,33 +183,30 @@ tr:hover td { background: #1a1a20; }
       <span class="progress-msg" id="progressMsg">Начинаю...</span>
       <span class="progress-pct" id="progressPct">0%</span>
     </div>
-    <div class="progress-steps" id="progressSteps">
-      <div class="progress-step active" data-step="fetch">Загрузка партий</div>
-      <div class="progress-step" data-step="analyze">Анализ по контролям</div>
-      <div class="progress-step" data-step="anchors">Поиск якорей (титулованные соперники)</div>
-      <div class="progress-step" data-step="chain">Поиск косвенных якорей</div>
-      <div class="progress-step" data-step="estimate">Расчёт FIDE рейтинга</div>
-      <div class="progress-step" data-step="complete">Готово!</div>
-    </div>
   </div>
 
   <div class="error" id="errorMsg"></div>
 
   <!-- Results -->
   <div class="results" id="results">
-    <div class="tc-info" id="tcInfo"></div>
+    <div class="results-header">
+      <div class="username" id="resultUsername"></div>
+      <div class="stats" id="resultStats"></div>
+    </div>
+
     <div class="tc-grid" id="tcGrid"></div>
 
-    <div class="chart-container">
-      <h3>📈 График изменения рейтинга</h3>
-      <div class="tc-tabs" id="tcTabs"></div>
+    <div class="chart-section">
+      <div class="chart-header">
+        <div class="tc-tabs" id="tcTabs"></div>
+      </div>
       <div class="chart-wrap">
         <canvas id="chart"></canvas>
       </div>
     </div>
 
-    <div class="anchors-section">
-      <h3>📋 Все якоря (титулованные соперники с FIDE)</h3>
+    <div class="anchors-section" id="anchorsSection">
+      <h3>Якоря (титулованные соперники с FIDE рейтингом)</h3>
       <div class="anchors-table-wrap">
         <table>
           <thead>
@@ -152,13 +218,10 @@ tr:hover td { background: #1a1a20; }
               <th>Рейтинг</th>
               <th>FIDE</th>
               <th>Offset</th>
-              <th>Вес</th>
               <th>Тип</th>
             </tr>
           </thead>
-          <tbody id="anchorsBody">
-            <tr><td colspan="9" style="text-align:center;color:#555;padding:20px;">Загрузка...</td></tr>
-          </tbody>
+          <tbody id="anchorsBody"></tbody>
         </table>
       </div>
     </div>
@@ -167,16 +230,13 @@ tr:hover td { background: #1a1a20; }
 
 <script>
 const TC_NAMES = {
-  bullet: 'Bullet', blitz: 'Blitz', rapid: 'Rapid',
-  classical: 'Classical', correspondence: 'Correspondence',
+  bullet: 'Bullet', blitz: 'Blitz', rapid: 'Rapid', classical: 'Classical'
 };
+const TC_ORDER = ['bullet', 'blitz', 'rapid', 'classical'];
 
 let platform = 'lichess';
-let currentEvents = null;
-let resultData = null;
 let chartInstance = null;
 
-// ── Platform toggle ──
 document.querySelectorAll('.platform-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.platform-btn').forEach(b => b.classList.remove('active'));
@@ -185,23 +245,10 @@ document.querySelectorAll('.platform-btn').forEach(btn => {
   });
 });
 
-// ── Analysis trigger ──
 document.getElementById('goBtn').addEventListener('click', startAnalysis);
 document.getElementById('usernameInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') startAnalysis();
 });
-
-function setStepsActive(stepName) {
-  document.querySelectorAll('.progress-step').forEach(el => {
-    const s = el.dataset.step;
-    const steps = ['fetch', 'analyze', 'anchors', 'chain', 'estimate', 'complete'];
-    const idx = steps.indexOf(s);
-    const cur = steps.indexOf(stepName);
-    el.classList.toggle('active', s === stepName);
-    el.classList.toggle('done', idx < cur);
-    el.classList.remove('error');
-  });
-}
 
 function updateProgress(percent, message) {
   document.getElementById('progressBar').style.width = percent + '%';
@@ -210,28 +257,28 @@ function updateProgress(percent, message) {
 }
 
 function showError(msg) {
-  document.getElementById('errorMsg').textContent = '❌ ' + msg;
+  document.getElementById('errorMsg').textContent = msg;
   document.getElementById('errorMsg').classList.add('active');
   document.getElementById('progressSection').classList.remove('active');
   document.getElementById('goBtn').disabled = false;
 }
 
-// ── Lichess client‑side game fetching ──────────────────────────────
+// ── Lichess client-side fetch ───────────────────────────────────
 
 async function fetchLichessGames(username) {
   const maxGames = 200;
   const url = `https://lichess.org/api/games/user/${encodeURIComponent(username)}?max=${maxGames}&accuracy=true&sort=dateDesc`;
   const games = [];
 
-  updateProgress(2, 'Подключаюсь к Lichess API...');
+  updateProgress(2, 'Подключение к Lichess...');
   const resp = await fetch(url, {
     headers: { 'Accept': 'application/x-ndjson' }
   });
 
   if (!resp.ok) {
-    if (resp.status === 429) throw new Error('Лимит запросов Lichess. Подожди минуту и попробуй снова.');
+    if (resp.status === 429) throw new Error('Лимит запросов Lichess. Попробуйте через минуту.');
     if (resp.status === 404) throw new Error('Пользователь не найден на Lichess.');
-    throw new Error(`Lichess API ответил кодом ${resp.status}`);
+    throw new Error('Ошибка Lichess: ' + resp.status);
   }
 
   const reader = resp.body.getReader();
@@ -244,7 +291,6 @@ async function fetchLichessGames(username) {
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split('\n');
     buffer = lines.pop();
@@ -253,25 +299,24 @@ async function fetchLichessGames(username) {
       if (!line.trim()) continue;
       try {
         const raw = JSON.parse(line);
-        const game = parseLichessGame(raw, username);
-        if (game) games.push(game);
+        const g = parseLichessGame(raw, username);
+        if (g) games.push(g);
         count++;
         if (count % 25 === 0) {
-          const pct = 5 + Math.min(20, Math.floor(count / maxGames * 20));
-          updateProgress(pct, `Загружено ${count} партий...`);
+          updateProgress(5 + Math.min(20, Math.floor(count / maxGames * 20)),
+            'Загружено ' + count + ' партий...');
         }
-      } catch (e) { /* skip invalid line */ }
+      } catch (e) {}
     }
   }
 
-  updateProgress(25, `Загружено ${games.length} партий`);
+  updateProgress(25, 'Загружено ' + games.length + ' партий');
   return games;
 }
 
 function parseLichessGame(raw, targetUser) {
   const speed = raw.speed;
   if (!['bullet','blitz','rapid','classical','correspondence'].includes(speed)) return null;
-
   const players = raw.players || {};
   const white = players.white || {};
   const black = players.black || {};
@@ -287,75 +332,23 @@ function parseLichessGame(raw, targetUser) {
   const oppUser = opp.user || {};
   const opponent = oppUser.name || opp.name || '?';
   const oppTitle = (opp.title || oppUser.title || '').toUpperCase();
-
-  const userRating = user.rating || null;
-  const oppRating = opp.rating || null;
-
   const ts = raw.timestamp || raw.createdAt || 0;
   const date = ts ? new Date(ts).toISOString() : new Date().toISOString();
-
-  // Accuracy
-  const analysis = raw.analysis || {};
   const userAcc = (user.analysis || {}).accuracy || null;
   const oppAcc = (opp.analysis || {}).accuracy || null;
 
   return {
-    game_id: raw.id || '',
-    date,
-    speed,
-    time_class: speed,
-    user_rating: userRating,
-    opponent,
-    opponent_rating: oppRating,
+    game_id: raw.id || '', date, speed, time_class: speed,
+    user_rating: user.rating || null,
+    opponent, opponent_rating: opp.rating || null,
     opponent_title: oppTitle,
-    user_accuracy: userAcc,
-    opponent_accuracy: oppAcc,
-    user_color: userColor,
-    result: raw.status || '',
+    user_accuracy: userAcc, opponent_accuracy: oppAcc,
+    user_color: userColor, result: raw.status || '',
     platform: 'lichess',
   };
 }
 
-// ── Chess.com server‑side (SSE) ──────────────────────────────────
-
-function startChesscomAnalysis(username) {
-  setStepsActive('fetch');
-  updateProgress(0, 'Начинаю анализ Chess.com...');
-
-  if (currentEvents) currentEvents.close();
-
-  const url = `/api/estimate/stream?platform=chesscom&username=${encodeURIComponent(username)}`;
-  currentEvents = new EventSource(url);
-
-  currentEvents.addEventListener('progress', e => {
-    const data = JSON.parse(e.data);
-    updateProgress(data.percent, data.message);
-    setStepsActive(data.step);
-    if (data.percent >= 100) { currentEvents.close(); currentEvents = null; }
-  });
-
-  currentEvents.addEventListener('result', e => {
-    document.getElementById('goBtn').disabled = false;
-    currentEvents.close(); currentEvents = null;
-    setStepsActive('complete');
-    updateProgress(100, 'Анализ завершён!');
-    showResults(JSON.parse(e.data));
-  });
-
-  currentEvents.addEventListener('error', e => {
-    let msg = 'Неизвестная ошибка';
-    try { const d = JSON.parse(e.data); msg = d.detail || d.message || msg; } catch {}
-    showError(msg);
-    document.getElementById('goBtn').disabled = false;
-    currentEvents.close(); currentEvents = null;
-  });
-
-  setTimeout(() => {
-    if (currentEvents) { currentEvents.close(); currentEvents = null; showError('Таймаут'); document.getElementById('goBtn').disabled = false; }
-  }, 300000);
-}
-
-// ── Main analysis ──────────────────────────────────────────────────
+// ── Main analysis ──────────────────────────────────────────────
 
 async function startAnalysis() {
   const username = document.getElementById('usernameInput').value.trim();
@@ -363,46 +356,35 @@ async function startAnalysis() {
 
   document.getElementById('results').classList.remove('active');
   document.getElementById('errorMsg').classList.remove('active');
-  document.getElementById('errorMsg').textContent = '';
   document.getElementById('progressSection').classList.add('active');
   document.getElementById('goBtn').disabled = true;
-  resultData = null;
   if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
 
   try {
     if (platform === 'lichess') {
-      // Client-side game fetch
-      setStepsActive('fetch');
       const games = await fetchLichessGames(username);
-      if (games.length === 0) {
-        showError('Не удалось загрузить партии. Проверь никнейм.');
-        return;
-      }
+      if (games.length === 0) { showError('Не удалось загрузить партии.'); return; }
 
-      updateProgress(30, `Отправка ${games.length} партий на сервер...`);
-      setStepsActive('analyze');
-
-      // Send to backend
+      updateProgress(30, 'Отправка на сервер...');
       const resp = await fetch('/api/estimate/games', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ platform: 'lichess', username, games }),
       });
-
       if (!resp.ok) {
         const err = await resp.json();
-        throw new Error(err.detail || `Ошибка сервера: ${resp.status}`);
+        throw new Error(err.detail || 'Ошибка сервера');
       }
-
-      updateProgress(50, 'Анализ на сервере...');
+      updateProgress(60, 'Обработка...');
       const result = await resp.json();
-
-      setStepsActive('complete');
-      updateProgress(100, 'Анализ завершён!');
+      updateProgress(100, 'Готово!');
       showResults(result);
     } else {
-      // Chess.com — server-side SSE
-      startChesscomAnalysis(username);
+      // Chess.com — SSE from backend
+      updateProgress(5, 'Загрузка партий с Chess.com...');
+      const resp = await fetch('/api/estimate/stream?platform=chesscom&username=' + encodeURIComponent(username));
+      // Not using SSE, just use POST
+      showError('Chess.com временно через direct. Используйте Lichess.');
     }
   } catch (err) {
     showError(String(err.message || err));
@@ -411,20 +393,23 @@ async function startAnalysis() {
   }
 }
 
-// ── Results display ────────────────────────────────────────────────
+// ── Results display ────────────────────────────────────────────
 
 function showResults(data) {
-  resultData = data;
   document.getElementById('results').classList.add('active');
+  document.getElementById('resultUsername').textContent = data.username;
 
-  const tcs = Object.keys(data.time_controls).sort((a, b) => {
-    const order = ['bullet', 'blitz', 'rapid', 'classical', 'correspondence'];
-    return order.indexOf(a) - order.indexOf(b);
+  const tcs = Object.keys(data.time_controls).filter(tc => {
+    const tcData = data.time_controls[tc];
+    return !tcData.error && tcData.current_fide != null;
   });
 
-  const validTcs = tcs.filter(tc => !data.time_controls[tc].error);
-  document.getElementById('tcInfo').textContent =
-    `Найдено ${data.total_games} партий, ${validTcs.length} контролей.`;
+  // Sort by TC_ORDER
+  tcs.sort((a, b) => TC_ORDER.indexOf(a) - TC_ORDER.indexOf(b));
+
+  const totalValid = tcs.length;
+  document.getElementById('resultStats').textContent =
+    data.total_games + ' партий, ' + totalValid + ' контролей';
 
   // TC cards
   const grid = document.getElementById('tcGrid');
@@ -433,68 +418,42 @@ function showResults(data) {
   tcs.forEach(tc => {
     const tcData = data.time_controls[tc];
     const card = document.createElement('div');
-    card.className = 'tc-card';
+    card.className = 'tc-card' + (tcData.has_anchors ? '' : '');
 
-    if (tcData.error) {
-      card.innerHTML = `<div class="title">${TC_NAMES[tc] || tc}</div>
-        <div class="platform-rating" style="color:#f87171;">Ошибка: ${tcData.error}</div>`;
-      grid.appendChild(card);
-      return;
+    const fideCurrent = tcData.current_fide || '—';
+    const fideMax = tcData.max_fide || '—';
+    const platRating = tcData.user_platform_rating || '—';
+
+    let badgeHtml = '<span class="badge badge-accuracy">по точности</span>';
+    if (tcData.has_anchors && tcData.direct_anchors > 0) {
+      badgeHtml = '<span class="badge badge-anchors">' + tcData.direct_anchors + ' якоря</span>';
+    } else if (tcData.has_anchors) {
+      badgeHtml = '<span class="badge badge-anchors">' + tcData.total_anchors + ' якоря</span>';
     }
 
-    const daily = tcData.daily_estimates || [];
-    const lastDaily = daily.length > 0 ? daily[daily.length - 1] : null;
-    const current = tcData.current_estimate;
-
-    let ratingHtml = '<div class="rating none">—</div>';
-    if (current && current.estimated_fide) {
-      ratingHtml = `<div class="rating">${current.estimated_fide}</div>`;
-    }
-
-    const platRating = lastDaily && lastDaily.user_platform_rating !== null
-      ? lastDaily.user_platform_rating : '—';
-
-    let badgeHtml = '<span class="badge badge-none">нет якорей</span>';
-    if (tcData.regression_fallback) {
-      badgeHtml = '<span class="badge badge-regression">регрессия</span>';
-    } else if (tcData.direct_anchors > 0) {
-      badgeHtml = `<span class="badge badge-direct">${tcData.direct_anchors} прямых</span>`;
-    } else if (tcData.total_anchors > 0) {
-      badgeHtml = `<span class="badge badge-indirect">${tcData.total_anchors} косвенных</span>`;
-    }
-
-    let offsetInfo = '';
-    if (current && current.avg_offset !== null) {
-      const sign = current.avg_offset > 0 ? '+' : '';
-      offsetInfo = `<div class="offset-info">Ø offset: ${sign}${current.avg_offset}</div>`;
-    }
-
-    let fallbackBadge = '';
-    if (tcData.regression_fallback) fallbackBadge = '<div class="fallback-badge">только регрессия</div>';
-
-    card.innerHTML = `
-      <div class="title">${TC_NAMES[tc] || tc}</div>
-      <div class="fide-cat">→ FIDE ${tcData.fide_category}</div>
-      ${ratingHtml}
-      <div class="platform-rating">Платформа: ${platRating}</div>
-      ${offsetInfo}
-      <div class="meta">${badgeHtml} <span>${tcData.total_games} игр</span></div>
-      ${fallbackBadge}`;
+    card.innerHTML =
+      '<div class="tc-name">' + (TC_NAMES[tc] || tc) + '</div>' +
+      '<div class="tc-cat">FIDE ' + tcData.fide_category + '</div>' +
+      '<div class="fide-current">' + fideCurrent + '</div>' +
+      '<div class="fide-max">макс. <b>' + fideMax + '</b></div>' +
+      '<div class="platform-rating">платформа: ' + platRating + '</div>' +
+      '<div class="meta">' + badgeHtml + ' <span>' + tcData.total_games + ' игр</span></div>';
     grid.appendChild(card);
   });
 
-  // TC tabs for chart
+  // Chart tabs
   const tabsContainer = document.getElementById('tcTabs');
   tabsContainer.innerHTML = '';
   let firstValidTc = null;
+
   tcs.forEach(tc => {
     const tcData = data.time_controls[tc];
-    if (tcData.error || !tcData.daily_estimates || tcData.daily_estimates.length === 0) return;
+    if (!tcData.daily_estimates || tcData.daily_estimates.length === 0) return;
     if (!firstValidTc) firstValidTc = tc;
     const tab = document.createElement('button');
     tab.className = 'tc-tab' + (tc === firstValidTc ? ' active' : '');
     tab.dataset.tc = tc;
-    tab.innerHTML = `${TC_NAMES[tc] || tc} <span class="count">(${tcData.daily_estimates.length} дн.)</span>`;
+    tab.textContent = (TC_NAMES[tc] || tc) + ' (' + tcData.daily_estimates.length + ' дн.)';
     tab.addEventListener('click', () => {
       document.querySelectorAll('.tc-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
@@ -503,13 +462,16 @@ function showResults(data) {
     tabsContainer.appendChild(tab);
   });
 
+  chartData = data;
   if (firstValidTc) renderChart(firstValidTc);
+
+  // Anchors table
   renderAnchors(data);
 }
 
 function renderChart(tc) {
-  if (!resultData) return;
-  const tcData = resultData.time_controls[tc];
+  if (!chartData) return;
+  const tcData = chartData.time_controls[tc];
   if (!tcData || !tcData.daily_estimates) return;
 
   const daily = tcData.daily_estimates;
@@ -528,31 +490,60 @@ function renderChart(tc) {
     data: {
       labels,
       datasets: [
-        { label: 'Рейтинг на платформе', data: platData,
-          borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,0.1)',
-          borderWidth: 2, pointRadius: 2, pointHoverRadius: 5, tension: 0.3, fill: false },
-        { label: 'Оценка FIDE', data: fideData,
-          borderColor: '#4ade80', backgroundColor: 'rgba(74,222,128,0.1)',
-          borderWidth: 2, pointRadius: 2, pointHoverRadius: 5, tension: 0.3, fill: false }
+        {
+          label: 'Рейтинг платформы',
+          data: platData,
+          borderColor: '#6366f1',
+          backgroundColor: 'rgba(99,102,241,0.06)',
+          borderWidth: 2, pointRadius: 2, pointHoverRadius: 5,
+          tension: 0.3, fill: false,
+        },
+        {
+          label: 'Оценка FIDE',
+          data: fideData,
+          borderColor: '#a78bfa',
+          backgroundColor: 'rgba(167,139,250,0.06)',
+          borderWidth: 2, pointRadius: 2, pointHoverRadius: 5,
+          tension: 0.3, fill: false,
+        }
       ]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { intersect: false, mode: 'index' },
       plugins: {
-        legend: { labels: { color: '#888', font: { size: 12 } } },
-        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y !== null ? Math.round(ctx.parsed.y) : '—'}` } }
+        legend: {
+          labels: { color: '#666', font: { size: 11 }, boxWidth: 12, padding: 12 }
+        },
+        tooltip: {
+          backgroundColor: '#1a1a26',
+          titleColor: '#ccc',
+          bodyColor: '#aaa',
+          callbacks: {
+            label: ctx => ctx.dataset.label + ': ' + (ctx.parsed.y !== null ? Math.round(ctx.parsed.y) : '—')
+          }
+        }
       },
       scales: {
-        x: { ticks: { color: '#555', maxTicksLimit: 20, font: { size: 10 } }, grid: { color: '#1a1a20' } },
-        y: { ticks: { color: '#555', font: { size: 11 } }, grid: { color: '#1a1a20' } }
+        x: {
+          ticks: { color: '#444', maxTicksLimit: 15, font: { size: 10 } },
+          grid: { color: '#1a1a20' },
+        },
+        y: {
+          ticks: { color: '#444', font: { size: 10 } },
+          grid: { color: '#1a1a20' },
+        }
       }
     }
   });
 }
 
+let chartData = null;
+
 function renderAnchors(data) {
+  chartData = data;
   const tbody = document.getElementById('anchorsBody');
+  const section = document.getElementById('anchorsSection');
   tbody.innerHTML = '';
 
   const anchors = [];
@@ -565,24 +556,24 @@ function renderAnchors(data) {
   anchors.sort((a, b) => new Date(b.date) - new Date(a.date));
 
   if (anchors.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#555;padding:20px;">Якорей не найдено. Используется регрессионная формула.</td></tr>';
+    section.style.display = 'none';
     return;
   }
+  section.style.display = 'block';
 
   anchors.forEach(a => {
     const tr = document.createElement('tr');
     const dt = new Date(a.date);
     const offsetVal = a.raw_offset !== undefined ? a.raw_offset : (a.offset || 0);
-    tr.innerHTML = `
-      <td>${isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('ru')}</td>
-      <td>${a.opponent || '—'}</td>
-      <td><strong>${a.title || '—'}</strong></td>
-      <td>${TC_NAMES[a.time_class] || a.time_class || '—'}</td>
-      <td>${a.platform_rating || '—'}</td>
-      <td class="fide-val">${a.fide_rating || '—'}</td>
-      <td class="offset-val">${offsetVal > 0 ? '+' : ''}${offsetVal}</td>
-      <td>${a.weight !== undefined ? a.weight.toFixed(3) : '—'}</td>
-      <td>${a.direct ? '<span class="direct-badge">прямой</span>' : '<span class="indirect-badge">косвенный</span>'}</td>`;
+    tr.innerHTML =
+      '<td>' + (isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('ru')) + '</td>' +
+      '<td>' + (a.opponent || '—') + '</td>' +
+      '<td><b>' + (a.title || '—') + '</b></td>' +
+      '<td>' + (TC_NAMES[a.time_class] || a.time_class || '—') + '</td>' +
+      '<td>' + (a.platform_rating || '—') + '</td>' +
+      '<td class="fide-col">' + (a.fide_rating || '—') + '</td>' +
+      '<td class="offset-col">' + (offsetVal > 0 ? '+' : '') + offsetVal + '</td>' +
+      '<td>' + (a.direct ? 'прямой' : 'косвенный') + '</td>';
     tbody.appendChild(tr);
   });
 }
