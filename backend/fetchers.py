@@ -77,6 +77,15 @@ async def _lich_user_name(session, username: str) -> str:
     return data.get("username", username)
 
 
+async def _lich_profile_fide(session, username: str) -> Optional[int]:
+    """Get FIDE rating from Lichess profile (user-entered, may be inflated)."""
+    data = await _lich_get_user(session, username)
+    fide = data.get("fideRating")
+    if fide and isinstance(fide, (int, float)) and fide > 0:
+        return int(fide)
+    return None
+
+
 async def fetch_lichess_games(username: str, max_games: int = 500) -> list[GameRecord]:
     """Fetch ALL games for a user from Lichess."""
     games: list[GameRecord] = []

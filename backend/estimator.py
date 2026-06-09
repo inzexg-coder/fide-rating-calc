@@ -9,6 +9,7 @@ import aiohttp
 from fide_titles import FIDE_TITLES, TC_MAP
 from fetchers import GameRecord, fetch_lichess_games, fetch_chesscom_games, enrich_chesscom_titles
 from fide_client import FIDEClient
+from regression import estimate_via_regression
 
 # ── Crowdsourcing ───────────────────────────────────────────────────
 CROWD_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cache", "crowd_offsets.json")
@@ -201,8 +202,15 @@ class Estimator:
             titled = await self._find_titled_anchors(games, fide_cat, session)
             await self._report("anchors", f"Найдено {len(titled)} титулованных якорей в {tc}", 60)
 
-            # Step 2: Non-titled FIDE anchors (any opponent with FIDE ID)
             all_anchors = list(titled)
+
+            # Step 1b: Profile FIDE anchors (Lichess users with FIDE in profile)
+            profile = await self._find_profile_fide_anchors(games, fide_cat, session)
+            if profile:
+                await self._report("anchors", f"Плюс {len(profile)} якорей из профилей Lichess", 63)
+                all_anchors.extend(profile)
+
+            # Step 2: Non-titled FIDE anchors (any opponent with FIDE ID)
             nontitled = await self._find_nontitled_anchors(games, fide_cat, session)
             all_anchors.extend(nontitled)
             if nontitled:
@@ -327,6 +335,50 @@ class Estimator:
                         fide_category=fide_cat,
                         direct=True, is_titled=False,
                     ))
+
+        return anchors
+
+    # ── NEW: Profile FIDE anchors (Lichess users who set their FIDE in profile) ─
+
+    async def _find_profile_fide_anchors(self, games: list, fide_cat: str,
+                                          session: aiohttp.ClientSession) -> list:
+        """Use FIDE ratings set by opponents on their Lichess profile (may be inflated).
+        Only use if: fide < 2000 and fide < opponent's platform rating (not inflated)."""
+        from fetchers import _lich_profile_fide
+
+        anchors = []
+        checked = set()
+
+        for game in games:
+            if game.platform != "lichess":
+                continue
+            if not game.opponent or game.opponent in checked:
+                continue
+            checked.add(game.opponent)
+            if len(checked) > 15:
+                break
+
+            profile_fide = await _lich_profile_fide(session, game.opponent)
+            if profile_fide is None:
+                continue
+
+            # Reliability checks
+            if profile_fide >= 2000:
+                continue
+            if game.opponent_rating and profile_fide >= game.opponent_rating:
+                continue
+
+            # Use proper constructor but override weight
+            a = Anchor(
+                game=game, title=game.opponent_title or "",
+                fide_rating=profile_fide,
+                fide_category=fide_cat,
+                direct=True,
+                is_titled=bool(game.opponent_title and game.opponent_title.upper() in FIDE_TITLES),
+            )
+            a.weight = 0.3  # profile FIDE is less reliable
+            a.adjusted_offset = a.raw_offset * (1.0 + (a._avg_accuracy() - 0.5) * 0.5)
+            anchors.append(a)
 
         return anchors
 
