@@ -13,7 +13,7 @@ h1 { font-size: 32px; font-weight: 700; color: #fff; margin-bottom: 8px; }
 h1 span { background: linear-gradient(135deg, #7c3aed, #2563eb); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 .subtitle { color: #888; margin-bottom: 32px; font-size: 14px; }
 
-.input-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 32px; }
+.input-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 20px; }
 .platform-btn { padding: 10px 20px; border: 2px solid #333; border-radius: 8px; background: #1a1a20; color: #888; cursor: pointer; font-size: 14px; font-weight: 600; transition: all .2s; }
 .platform-btn.active { border-color: #7c3aed; color: #fff; background: #2a1a3e; }
 .platform-btn:hover { border-color: #555; }
@@ -23,11 +23,19 @@ input[type="text"]:focus { border-color: #7c3aed; }
 .btn-go:disabled { opacity: .5; cursor: not-allowed; }
 .btn-go:hover:not(:disabled) { opacity: .9; }
 
-.loading { display: none; text-align: center; padding: 60px 0; }
-.loading.active { display: block; }
-.spinner { width: 48px; height: 48px; border: 4px solid #333; border-top-color: #7c3aed; border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 16px; }
-@keyframes spin { to { transform: rotate(360deg); } }
-.loading p { color: #888; font-size: 14px; }
+/* ── Progress ── */
+.progress-section { display: none; margin-bottom: 24px; }
+.progress-section.active { display: block; }
+.progress-bar-bg { width: 100%; height: 8px; background: #2a2a32; border-radius: 4px; overflow: hidden; }
+.progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, #7c3aed, #2563eb); border-radius: 4px; transition: width 0.5s ease; }
+.progress-status { display: flex; justify-content: space-between; margin-top: 8px; font-size: 13px; }
+.progress-msg { color: #aaa; }
+.progress-pct { color: #555; font-weight: 600; }
+.progress-steps { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; }
+.progress-step { font-size: 12px; color: #555; padding: 4px 8px; border-left: 2px solid #2a2a32; }
+.progress-step.active { color: #4ade80; border-left-color: #4ade80; }
+.progress-step.done { color: #666; border-left-color: #7c3aed; }
+.progress-step.error { color: #f87171; border-left-color: #ef4444; }
 
 .error { display: none; padding: 16px; background: #2d1414; border: 1px solid #ef4444; border-radius: 8px; color: #f87171; margin-bottom: 24px; }
 .error.active { display: block; }
@@ -41,13 +49,14 @@ input[type="text"]:focus { border-color: #7c3aed; }
 .tc-card .fide-cat { font-size: 11px; color: #555; margin-bottom: 12px; }
 .tc-card .rating { font-size: 42px; font-weight: 700; color: #fff; margin-bottom: 4px; }
 .tc-card .rating.none { color: #555; }
-.tc-card .platform-rating { font-size: 14px; color: #666; margin-bottom: 12px; }
+.tc-card .platform-rating { font-size: 14px; color: #666; margin-bottom: 8px; }
 .tc-card .meta { font-size: 12px; color: #555; }
 .tc-card .meta span { display: inline-block; margin: 0 6px; }
 .tc-card .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
 .badge-direct { background: #1a3a1a; color: #4ade80; }
 .badge-indirect { background: #1a1a2e; color: #60a5fa; }
 .badge-none { background: #2a1a1a; color: #f87171; }
+.tc-card .offset-info { font-size: 12px; color: #60a5fa; margin-top: 4px; }
 
 .chart-container { background: #1a1a20; border: 1px solid #2a2a32; border-radius: 12px; padding: 20px; margin-bottom: 24px; }
 .chart-container h3 { font-size: 16px; margin-bottom: 16px; color: #ccc; }
@@ -86,9 +95,13 @@ tr:hover td { background: #1a1a25; }
     <button class="btn-go" id="btnGo">Оценить</button>
   </div>
 
-  <div class="loading" id="loading">
-    <div class="spinner"></div>
-    <p>Анализирую партии, ищу титулованных соперников, запрашиваю FIDE...</p>
+  <div class="progress-section" id="progressSection">
+    <div class="progress-bar-bg"><div class="progress-bar" id="progressBar"></div></div>
+    <div class="progress-status">
+      <span class="progress-msg" id="progressMsg">Загрузка...</span>
+      <span class="progress-pct" id="progressPct">0%</span>
+    </div>
+    <div class="progress-steps" id="progressSteps"></div>
   </div>
 
   <div class="error" id="error"></div>
@@ -133,6 +146,7 @@ tr:hover td { background: #1a1a25; }
 let platform = 'lichess';
 let resultData = null;
 let chartInstance = null;
+let currentES = null;
 
 document.querySelectorAll('.platform-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -146,44 +160,143 @@ document.getElementById('username').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('btnGo').click();
 });
 
-document.getElementById('btnGo').addEventListener('click', async () => {
+document.getElementById('btnGo').addEventListener('click', startEstimate);
+
+function startEstimate() {
   const username = document.getElementById('username').value.trim();
   if (!username) return;
-  
+
+  // Abort any existing connection
+  if (currentES) { currentES.close(); currentES = null; }
+
   const btn = document.getElementById('btnGo');
   btn.disabled = true;
   btn.textContent = 'Анализирую...';
-  document.getElementById('loading').classList.add('active');
+  document.getElementById('progressSection').classList.add('active');
+  document.getElementById('progressBar').style.width = '0%';
+  document.getElementById('progressMsg').textContent = 'Начинаю...';
+  document.getElementById('progressPct').textContent = '0%';
+  document.getElementById('progressSteps').innerHTML = '';
   document.getElementById('error').classList.remove('active');
   document.getElementById('results').classList.remove('active');
   resultData = null;
 
-  try {
-    const res = await fetch('/api/estimate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platform, username })
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || `HTTP ${res.status}`);
+  // Add step indicators
+  const steps = [
+    { id: 'fetch', label: 'Загрузка партий' },
+    { id: 'analyze', label: 'Анализ партий' },
+    { id: 'anchors', label: 'Поиск якорей' },
+    { id: 'chain', label: 'Цепочки' },
+    { id: 'estimate', label: 'Расчёт рейтинга' },
+    { id: 'complete', label: 'Готово' },
+  ];
+  const stepsContainer = document.getElementById('progressSteps');
+  steps.forEach((s, i) => {
+    const div = document.createElement('div');
+    div.className = 'progress-step';
+    div.id = 'step-' + s.id;
+    div.textContent = `${i+1}. ${s.label}`;
+    stepsContainer.appendChild(div);
+  });
+
+  // Connect via SSE
+  const es = new EventSource(`/api/estimate/stream?platform=${platform}&username=${encodeURIComponent(username)}`);
+  currentES = es;
+
+  es.addEventListener('progress', (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      updateProgress(data);
+    } catch (err) { console.error('SSE parse error:', err); }
+  });
+
+  es.addEventListener('result', (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      resultData = data;
+      renderResults(data);
+      finishProgress(true);
+    } catch (err) { console.error('SSE result error:', err); }
+  });
+
+  es.addEventListener('error', (e) => {
+    // EventSource auto-reconnects on network errors
+    // If we got an actual error event from server:
+    if (e.data) {
+      try {
+        const data = JSON.parse(e.data);
+        showError(data.detail || 'Неизвестная ошибка');
+      } catch (err) {
+        showError('Ошибка соединения');
+      }
+      finishProgress(false);
+      es.close();
+      currentES = null;
     }
-    resultData = await res.json();
-    renderResults(resultData);
-  } catch (e) {
-    showError(e.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Оценить';
-    document.getElementById('loading').classList.remove('active');
+  });
+
+  // Handle connection close
+  es.onerror = () => {
+    // Only treat as error if we haven't completed
+    if (!document.getElementById('results').classList.contains('active')) {
+      // Check if es is still connecting (readyState 0 = CONNECTING)
+      if (es.readyState === EventSource.CLOSED) {
+        // Only show error if we didn't get a result
+        setTimeout(() => {
+          if (!document.getElementById('results').classList.contains('active')) {
+            showError('Соединение прервано. Возможно, запрос слишком долгий.');
+            finishProgress(false);
+          }
+        }, 2000);
+      }
+    }
+  };
+}
+
+function updateProgress(data) {
+  document.getElementById('progressBar').style.width = Math.min(data.percent, 100) + '%';
+  document.getElementById('progressMsg').textContent = data.message;
+  document.getElementById('progressPct').textContent = Math.min(data.percent, 100) + '%';
+
+  // Mark step as active
+  const stepEl = document.getElementById('step-' + data.step);
+  if (stepEl) {
+    document.querySelectorAll('.progress-step').forEach(s => s.classList.remove('active'));
+    stepEl.classList.add('active');
   }
-});
+
+  // Mark previous steps as done
+  const steps = ['fetch', 'analyze', 'anchors', 'chain', 'estimate', 'complete'];
+  const idx = steps.indexOf(data.step);
+  if (idx > 0) {
+    for (let i = 0; i < idx; i++) {
+      const el = document.getElementById('step-' + steps[i]);
+      if (el) { el.classList.remove('active'); el.classList.add('done'); }
+    }
+  }
+}
+
+function finishProgress(success) {
+  const btn = document.getElementById('btnGo');
+  btn.disabled = false;
+  btn.textContent = 'Оценить';
+
+  if (success) {
+    document.getElementById('step-complete').classList.remove('active');
+    document.getElementById('step-complete').classList.add('done');
+    document.getElementById('progressMsg').textContent = '✅ Анализ завершён!';
+    document.getElementById('progressBar').style.width = '100%';
+  }
+}
 
 function showError(msg) {
   const el = document.getElementById('error');
   el.textContent = '❌ ' + msg;
   el.classList.add('active');
+  finishProgress(false);
 }
+
+// ── Render results ──
 
 const TC_NAMES = {
   bullet: 'Пуля', blitz: 'Блиц', rapid: 'Рапид', classical: 'Классика', correspondence: 'Переписка'
@@ -194,9 +307,11 @@ function renderResults(data) {
   document.getElementById('results').classList.add('active');
 
   // Summary
+  const totalAnchors = Object.values(data.time_controls).reduce((s, tc) => s + (tc.total_anchors || 0), 0);
   document.getElementById('summary').innerHTML = `
     <span>👤 ${data.username}</span>
     <span>📋 ${data.total_games} партий</span>
+    <span>⚓ ${totalAnchors} якорей</span>
     <span>💾 ${data.cache_stats.total_entries} FIDE-записей в кэше</span>
   `;
 
@@ -204,23 +319,23 @@ function renderResults(data) {
   const grid = document.getElementById('tcGrid');
   grid.innerHTML = '';
   const tcs = Object.keys(data.time_controls).sort((a, b) => TC_ORDER.indexOf(a) - TC_ORDER.indexOf(b));
-  
+
   tcs.forEach(tc => {
     const tcData = data.time_controls[tc];
     if (tcData.error) return;
-    
+
     const card = document.createElement('div');
     card.className = 'tc-card';
-    
-    const rating = tcData.current_estimate;
-    const ratingHtml = rating !== null && rating !== undefined
+
+    const current = tcData.current_estimate;
+    const rating = current ? current.estimated_fide : null;
+    const ratingHtml = rating !== null
       ? `<div class="rating">${Math.round(rating)}</div>`
       : `<div class="rating none">—</div>`;
-    
-    const totalAnchors = tcData.total_anchors || 0;
+
     const directAnchors = tcData.direct_anchors || 0;
     const indirectAnchors = tcData.indirect_anchors || 0;
-    
+
     let badgeHtml = '';
     if (directAnchors > 0) {
       badgeHtml = `<span class="badge badge-direct">${directAnchors} прямых</span>`;
@@ -229,18 +344,23 @@ function renderResults(data) {
     } else {
       badgeHtml = `<span class="badge badge-none">нет якорей</span>`;
     }
-    
-    // Get the last user platform rating from daily_estimates
+
     const daily = tcData.daily_estimates || [];
     const lastDaily = daily.length > 0 ? daily[daily.length - 1] : null;
-    const platRating = lastDaily !== null && lastDaily.user_platform_rating !== null
-      ? lastDaily.user_platform_rating : '—';
-    
+    const platRating = lastDaily && lastDaily.user_platform_rating !== null ? lastDaily.user_platform_rating : '—';
+
+    let offsetInfo = '';
+    if (current && current.avg_offset !== null) {
+      const sign = current.avg_offset > 0 ? '+' : '';
+      offsetInfo = `<div class="offset-info">Ø offset: ${sign}${current.avg_offset}</div>`;
+    }
+
     card.innerHTML = `
       <div class="title">${TC_NAMES[tc] || tc}</div>
       <div class="fide-cat">→ FIDE ${tcData.fide_category}</div>
       ${ratingHtml}
       <div class="platform-rating">Платформа: ${platRating}</div>
+      ${offsetInfo}
       <div class="meta">${badgeHtml} <span>${tcData.total_games} игр</span></div>
     `;
     grid.appendChild(card);
@@ -249,13 +369,15 @@ function renderResults(data) {
   // TC tabs for chart
   const tabsContainer = document.getElementById('tcTabs');
   tabsContainer.innerHTML = '';
+  let firstValidTc = null;
   tcs.forEach((tc, i) => {
     const tcData = data.time_controls[tc];
     if (tcData.error || !tcData.daily_estimates || tcData.daily_estimates.length === 0) return;
+    if (!firstValidTc) firstValidTc = tc;
     const tab = document.createElement('button');
-    tab.className = 'tc-tab' + (i === 0 ? ' active' : '');
+    tab.className = 'tc-tab' + (tc === firstValidTc ? ' active' : '');
     tab.dataset.tc = tc;
-    tab.innerHTML = `${TC_NAMES[tc] || tc} <span class="count">(${tcData.daily_estimates.length})</span>`;
+    tab.innerHTML = `${TC_NAMES[tc] || tc} <span class="count">(${tcData.daily_estimates.length} дн.)</span>`;
     tab.addEventListener('click', () => {
       document.querySelectorAll('.tc-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
@@ -264,14 +386,9 @@ function renderResults(data) {
     tabsContainer.appendChild(tab);
   });
 
-  // Render first TC chart
-  const firstTc = tcs.find(tc => {
-    const d = data.time_controls[tc];
-    return d && !d.error && d.daily_estimates && d.daily_estimates.length > 0;
-  });
-  if (firstTc) renderChart(firstTc);
+  if (firstValidTc) renderChart(firstValidTc);
 
-  // Anchors table
+  // Anchors
   renderAnchors(data);
 }
 
@@ -289,7 +406,6 @@ function renderChart(tc) {
   const fideData = daily.map(d => d.estimated_fide);
 
   const ctx = document.getElementById('chart').getContext('2d');
-
   if (chartInstance) chartInstance.destroy();
 
   chartInstance = new Chart(ctx, {
@@ -335,12 +451,10 @@ function renderChart(tc) {
       },
       scales: {
         x: {
-          display: true,
           ticks: { color: '#555', maxTicksLimit: 20, font: { size: 10 } },
           grid: { color: '#1a1a20' },
         },
         y: {
-          display: true,
           ticks: { color: '#555', font: { size: 11 } },
           grid: { color: '#1a1a20' },
         }
@@ -352,7 +466,7 @@ function renderChart(tc) {
 function renderAnchors(data) {
   const tbody = document.getElementById('anchorsBody');
   tbody.innerHTML = '';
-  
+
   const anchors = [];
   Object.entries(data.time_controls).forEach(([tc, tcData]) => {
     if (tcData.anchors) {
@@ -361,14 +475,14 @@ function renderAnchors(data) {
       });
     }
   });
-  
+
   anchors.sort((a, b) => new Date(b.date) - new Date(a.date));
-  
+
   if (anchors.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#555;padding:20px;">Якорей не найдено</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#555;padding:20px;">Якорей не найдено. Возможно, ты играл только против слабых соперников.</td></tr>';
     return;
   }
-  
+
   anchors.forEach(a => {
     const tr = document.createElement('tr');
     const dt = new Date(a.date);

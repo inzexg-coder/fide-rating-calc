@@ -35,18 +35,25 @@ LICHESS_USER_URL = "https://lichess.org/api/user/{username}"
 
 
 async def _lich_stream(session, url, params) -> AsyncIterator[dict]:
-    """Iterate over NDJSON lines from Lichess."""
+    """Iterate over NDJSON lines from Lichess with rate-limit handling."""
     headers = {"Accept": "application/x-ndjson"}
-    async with session.get(url, params=params, headers=headers, timeout=aiohttp.ClientTimeout(total=120)) as resp:
-        if resp.status != 200:
+    max_retries = 3
+    for attempt in range(max_retries):
+        async with session.get(url, params=params, headers=headers, timeout=aiohttp.ClientTimeout(total=180)) as resp:
+            if resp.status == 429:
+                retry_after = int(resp.headers.get("Retry-After", "5"))
+                await asyncio.sleep(retry_after)
+                continue
+            if resp.status != 200:
+                return
+            async for line in resp.content:
+                line = line.strip()
+                if line:
+                    try:
+                        yield json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
             return
-        async for line in resp.content:
-            line = line.strip()
-            if line:
-                try:
-                    yield json.loads(line)
-                except json.JSONDecodeError:
-                    continue
 
 
 async def _lich_get_user(session, username: str) -> dict:
