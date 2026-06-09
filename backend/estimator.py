@@ -151,6 +151,16 @@ class Estimator:
         if not games:
             return {"error": "No games provided", "games_count": 0}
 
+        # Ensure ascending date order
+        games.sort(key=lambda g: g.date)
+
+        # Merge bullet→blitz and correspondence→classical for unified display
+        for g in games:
+            if g.time_class == "bullet":
+                g.time_class = "blitz"
+            elif g.time_class == "correspondence":
+                g.time_class = "classical"
+
         by_tc = {}
         for g in games:
             by_tc.setdefault(g.time_class, []).append(g)
@@ -169,10 +179,16 @@ class Estimator:
 
         self._save_crowd_data(results)
         await self._report("complete", "Анализ завершён!", 100)
+
+        # Calculate average accuracy across all games
+        all_accs = [g.user_accuracy for g in games if g.user_accuracy is not None]
+        avg_accuracy = round(sum(all_accs) / len(all_accs), 1) if all_accs else None
+
         return {
             "username": username,
             "platform": platform,
             "total_games": len(games),
+            "average_accuracy": avg_accuracy,
             "time_controls": results,
         }
 
@@ -191,6 +207,13 @@ class Estimator:
         if not games:
             await self._report("error", "Партий не найдено", 100)
             return {"error": "No games found", "games_count": 0}
+
+        # Merge bullet→blitz and correspondence→classical for unified display
+        for g in games:
+            if g.time_class == "bullet":
+                g.time_class = "blitz"
+            elif g.time_class == "correspondence":
+                g.time_class = "classical"
 
         by_tc = {}
         for g in games:
@@ -214,10 +237,16 @@ class Estimator:
         self._save_crowd_data(results)
 
         await self._report("complete", "Анализ завершён!", 100)
+
+        # Calculate average accuracy across all games
+        all_accs = [g.user_accuracy for g in games if g.user_accuracy is not None]
+        avg_accuracy = round(sum(all_accs) / len(all_accs), 1) if all_accs else None
+
         return {
             "username": username,
             "platform": platform,
             "total_games": len(games),
+            "average_accuracy": avg_accuracy,
             "time_controls": results,
         }
 

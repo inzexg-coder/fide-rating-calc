@@ -230,9 +230,9 @@ tr:hover td { background: #12121a; }
 
 <script>
 const TC_NAMES = {
-  bullet: 'Bullet', blitz: 'Blitz', rapid: 'Rapid', classical: 'Classical'
+  blitz: 'Blitz', rapid: 'Rapid', classical: 'Classical'
 };
-const TC_ORDER = ['bullet', 'blitz', 'rapid', 'classical'];
+const TC_ORDER = ['blitz', 'rapid', 'classical'];
 
 let platform = 'lichess';
 let chartInstance = null;
@@ -310,6 +310,8 @@ async function fetchLichessGames(username) {
     }
   }
 
+  // Sort by date ascending so graph is chronological
+  games.sort((a, b) => new Date(a.date) - new Date(b.date));
   updateProgress(25, 'Загружено ' + games.length + ' партий');
   return games;
 }
@@ -337,8 +339,11 @@ function parseLichessGame(raw, targetUser) {
   const userAcc = (user.analysis || {}).accuracy || null;
   const oppAcc = (opp.analysis || {}).accuracy || null;
 
+  // Map bullet→blitz, correspondence→classical
+  const tc = speed === 'bullet' ? 'blitz' : speed === 'correspondence' ? 'classical' : speed;
+
   return {
-    game_id: raw.id || '', date, speed, time_class: speed,
+    game_id: raw.id || '', date, speed, time_class: tc,
     user_rating: user.rating || null,
     opponent, opponent_rating: opp.rating || null,
     opponent_title: oppTitle,
@@ -408,8 +413,11 @@ function showResults(data) {
   tcs.sort((a, b) => TC_ORDER.indexOf(a) - TC_ORDER.indexOf(b));
 
   const totalValid = tcs.length;
-  document.getElementById('resultStats').textContent =
-    data.total_games + ' партий, ' + totalValid + ' контролей';
+  let statsText = data.total_games + ' партий, ' + totalValid + ' контролей';
+  if (data.average_accuracy != null) {
+    statsText += ', ср. точность ' + data.average_accuracy + '%';
+  }
+  document.getElementById('resultStats').textContent = statsText;
 
   // TC cards
   const grid = document.getElementById('tcGrid');
