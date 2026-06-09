@@ -20,6 +20,31 @@ def _make_session() -> aiohttp.ClientSession:
     conn = aiohttp.TCPConnector(family=socket.AF_INET, force_close=True)
     return aiohttp.ClientSession(connector=conn, timeout=aiohttp.ClientTimeout(total=120))
 
+# ── Lichess connectivity check ──────────────────────────────────
+_LICHESS_REACHABLE_CACHE = None
+
+async def check_lichess_reachable(session) -> bool:
+    """Quick check if Lichess API is reachable (cached for 60s)."""
+    global _LICHESS_REACHABLE_CACHE
+    if _LICHESS_REACHABLE_CACHE is not None:
+        return _LICHESS_REACHABLE_CACHE
+    try:
+        async with session.get(
+            "https://lichess.org/api/user/ericrosen",
+            timeout=aiohttp.ClientTimeout(total=5)
+        ) as resp:
+            _LICHESS_REACHABLE_CACHE = resp.status == 200
+            return _LICHESS_REACHABLE_CACHE
+    except (asyncio.TimeoutError, aiohttp.ClientError, OSError):
+        _LICHESS_REACHABLE_CACHE = False
+        return False
+
+
+def reset_lichess_reachable_cache():
+    """Reset the connectivity cache (for testing)."""
+    global _LICHESS_REACHABLE_CACHE
+    _LICHESS_REACHABLE_CACHE = None
+
 
 class GameRecord:
     """Normalised game record from either platform."""
