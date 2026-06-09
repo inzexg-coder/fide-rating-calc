@@ -11,7 +11,7 @@ from config import LICHESS_TOKEN
 _LICHESS_HEADERS = {"Authorization": f"Bearer {LICHESS_TOKEN}"} if LICHESS_TOKEN else {}
 
 # ── IPv4‑forced connector (Lichess IPv6 is flaky on this server) ─────
-# IPv4 connector created lazily inside _make_session
+
 
 
 def _make_session() -> aiohttp.ClientSession:

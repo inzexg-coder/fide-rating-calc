@@ -146,6 +146,38 @@ class Estimator:
 
     # ── Main entry ──────────────────────────────────────────────────
 
+    async def estimate_from_games(self, platform: str, username: str, games: list) -> dict:
+        """Run FIDE estimation on pre-fetched games (client-provided)."""
+        if not games:
+            return {"error": "No games provided", "games_count": 0}
+
+        by_tc = {}
+        for g in games:
+            by_tc.setdefault(g.time_class, []).append(g)
+
+        results = {}
+        tc_list = list(by_tc.items())
+        for idx, (tc, tc_games) in enumerate(tc_list):
+            pct = 15 + int(60 * (idx + 1) / len(tc_list))
+            await self._report("analyze", f"[{idx+1}/{len(tc_list)}] {tc} ({len(tc_games)} партий)...", pct)
+            try:
+                result = await self._process_time_control(tc, tc_games, platform, username)
+                results[tc] = result
+            except Exception as e:
+                results[tc] = {"error": str(e)}
+                await self._report("analyze", f"Ошибка в {tc}: {str(e)}", pct)
+
+        self._save_crowd_data(results)
+        await self._report("complete", "Анализ завершён!", 100)
+        return {
+            "username": username,
+            "platform": platform,
+            "total_games": len(games),
+            "time_controls": results,
+        }
+
+
+
     async def estimate(self, platform: str, username: str) -> dict:
         await self._report("fetch", f"Загрузка партий с {platform}...", 5)
         if platform == "lichess":

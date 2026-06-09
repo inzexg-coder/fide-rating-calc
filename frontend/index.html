@@ -43,6 +43,8 @@ input[type="text"]:focus { border-color: #7c3aed; }
 .results { display: none; }
 .results.active { display: block; }
 
+.tc-info { font-size: 13px; color: #888; margin-bottom: 20px; padding: 12px 16px; background: #1a1a20; border-radius: 8px; text-align: center; }
+
 .tc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 32px; }
 .tc-card { background: #1a1a20; border: 1px solid #2a2a32; border-radius: 12px; padding: 20px; text-align: center; position: relative; }
 .tc-card .title { font-size: 14px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
@@ -126,6 +128,7 @@ tr:hover td { background: #1a1a20; }
 
   <!-- Results -->
   <div class="results" id="results">
+    <div class="tc-info" id="tcInfo"></div>
     <div class="tc-grid" id="tcGrid"></div>
 
     <div class="chart-container">
@@ -168,8 +171,6 @@ const TC_NAMES = {
   classical: 'Classical', correspondence: 'Correspondence',
 };
 
-const PLATFORM = { lichess: 'Lichess', chesscom: 'Chess.com' };
-
 let platform = 'lichess';
 let currentEvents = null;
 let resultData = null;
@@ -202,71 +203,6 @@ function setStepsActive(stepName) {
   });
 }
 
-function startAnalysis() {
-  const username = document.getElementById('usernameInput').value.trim();
-  if (!username) return;
-
-  // Reset
-  document.getElementById('results').classList.remove('active');
-  document.getElementById('errorMsg').classList.remove('active');
-  document.getElementById('errorMsg').textContent = '';
-  document.getElementById('progressSection').classList.add('active');
-  document.getElementById('goBtn').disabled = true;
-  resultData = null;
-  if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
-
-  setStepsActive('fetch');
-  updateProgress(0, 'Начинаю анализ...');
-
-  // SSE
-  if (currentEvents) { currentEvents.close(); }
-  const url = `/api/estimate/stream?platform=${platform}&username=${encodeURIComponent(username)}`;
-  currentEvents = new EventSource(url);
-
-  currentEvents.addEventListener('progress', e => {
-    const data = JSON.parse(e.data);
-    updateProgress(data.percent, data.message);
-    setStepsActive(data.step);
-
-    if (data.percent >= 100) {
-      currentEvents.close();
-      currentEvents = null;
-    }
-  });
-
-  currentEvents.addEventListener('result', e => {
-    const data = JSON.parse(e.data);
-    document.getElementById('goBtn').disabled = false;
-    currentEvents.close();
-    currentEvents = null;
-    setStepsActive('complete');
-    updateProgress(100, 'Анализ завершён!');
-    showResults(data);
-  });
-
-  currentEvents.addEventListener('error', e => {
-    let msg = 'Неизвестная ошибка';
-    try {
-      const data = JSON.parse(e.data);
-      msg = data.detail || data.message || msg;
-    } catch {}
-    showError(msg);
-    document.getElementById('goBtn').disabled = false;
-    currentEvents.close();
-    currentEvents = null;
-  });
-
-  // Global timeout — 5 minutes
-  setTimeout(() => {
-    if (currentEvents) {
-      currentEvents.close();
-      currentEvents = null;
-      showError('Превышено время ожидания (5 мин). Попробуй ещё раз.');
-      document.getElementById('goBtn').disabled = false;
-    }
-  }, 300000);
-}
-
 function updateProgress(percent, message) {
   document.getElementById('progressBar').style.width = percent + '%';
   document.getElementById('progressMsg').textContent = message;
@@ -277,19 +213,222 @@ function showError(msg) {
   document.getElementById('errorMsg').textContent = '❌ ' + msg;
   document.getElementById('errorMsg').classList.add('active');
   document.getElementById('progressSection').classList.remove('active');
+  document.getElementById('goBtn').disabled = false;
 }
+
+// ── Lichess client‑side game fetching ──────────────────────────────
+
+async function fetchLichessGames(username) {
+  const maxGames = 200;
+  const url = `https://lichess.org/api/games/user/${encodeURIComponent(username)}?max=${maxGames}&accuracy=true&sort=dateDesc`;
+  const games = [];
+
+  updateProgress(2, 'Подключаюсь к Lichess API...');
+  const resp = await fetch(url, {
+    headers: { 'Accept': 'application/x-ndjson' }
+  });
+
+  if (!resp.ok) {
+    if (resp.status === 429) throw new Error('Лимит запросов Lichess. Подожди минуту и попробуй снова.');
+    if (resp.status === 404) throw new Error('Пользователь не найден на Lichess.');
+    throw new Error(`Lichess API ответил кодом ${resp.status}`);
+  }
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let count = 0;
+
+  updateProgress(5, 'Загрузка партий...');
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const raw = JSON.parse(line);
+        const game = parseLichessGame(raw, username);
+        if (game) games.push(game);
+        count++;
+        if (count % 25 === 0) {
+          const pct = 5 + Math.min(20, Math.floor(count / maxGames * 20));
+          updateProgress(pct, `Загружено ${count} партий...`);
+        }
+      } catch (e) { /* skip invalid line */ }
+    }
+  }
+
+  updateProgress(25, `Загружено ${games.length} партий`);
+  return games;
+}
+
+function parseLichessGame(raw, targetUser) {
+  const speed = raw.speed;
+  if (!['bullet','blitz','rapid','classical','correspondence'].includes(speed)) return null;
+
+  const players = raw.players || {};
+  const white = players.white || {};
+  const black = players.black || {};
+  const wuser = (white.user || {}).name || '';
+  const buser = (black.user || {}).name || '';
+  const tl = targetUser.toLowerCase();
+
+  let user, opp, userColor;
+  if (wuser.toLowerCase() === tl) { user = white; opp = black; userColor = 'white'; }
+  else if (buser.toLowerCase() === tl) { user = black; opp = white; userColor = 'black'; }
+  else return null;
+
+  const oppUser = opp.user || {};
+  const opponent = oppUser.name || opp.name || '?';
+  const oppTitle = (opp.title || oppUser.title || '').toUpperCase();
+
+  const userRating = user.rating || null;
+  const oppRating = opp.rating || null;
+
+  const ts = raw.timestamp || raw.createdAt || 0;
+  const date = ts ? new Date(ts).toISOString() : new Date().toISOString();
+
+  // Accuracy
+  const analysis = raw.analysis || {};
+  const userAcc = (user.analysis || {}).accuracy || null;
+  const oppAcc = (opp.analysis || {}).accuracy || null;
+
+  return {
+    game_id: raw.id || '',
+    date,
+    speed,
+    time_class: speed,
+    user_rating: userRating,
+    opponent,
+    opponent_rating: oppRating,
+    opponent_title: oppTitle,
+    user_accuracy: userAcc,
+    opponent_accuracy: oppAcc,
+    user_color: userColor,
+    result: raw.status || '',
+    platform: 'lichess',
+  };
+}
+
+// ── Chess.com server‑side (SSE) ──────────────────────────────────
+
+function startChesscomAnalysis(username) {
+  setStepsActive('fetch');
+  updateProgress(0, 'Начинаю анализ Chess.com...');
+
+  if (currentEvents) currentEvents.close();
+
+  const url = `/api/estimate/stream?platform=chesscom&username=${encodeURIComponent(username)}`;
+  currentEvents = new EventSource(url);
+
+  currentEvents.addEventListener('progress', e => {
+    const data = JSON.parse(e.data);
+    updateProgress(data.percent, data.message);
+    setStepsActive(data.step);
+    if (data.percent >= 100) { currentEvents.close(); currentEvents = null; }
+  });
+
+  currentEvents.addEventListener('result', e => {
+    document.getElementById('goBtn').disabled = false;
+    currentEvents.close(); currentEvents = null;
+    setStepsActive('complete');
+    updateProgress(100, 'Анализ завершён!');
+    showResults(JSON.parse(e.data));
+  });
+
+  currentEvents.addEventListener('error', e => {
+    let msg = 'Неизвестная ошибка';
+    try { const d = JSON.parse(e.data); msg = d.detail || d.message || msg; } catch {}
+    showError(msg);
+    document.getElementById('goBtn').disabled = false;
+    currentEvents.close(); currentEvents = null;
+  });
+
+  setTimeout(() => {
+    if (currentEvents) { currentEvents.close(); currentEvents = null; showError('Таймаут'); document.getElementById('goBtn').disabled = false; }
+  }, 300000);
+}
+
+// ── Main analysis ──────────────────────────────────────────────────
+
+async function startAnalysis() {
+  const username = document.getElementById('usernameInput').value.trim();
+  if (!username) return;
+
+  document.getElementById('results').classList.remove('active');
+  document.getElementById('errorMsg').classList.remove('active');
+  document.getElementById('errorMsg').textContent = '';
+  document.getElementById('progressSection').classList.add('active');
+  document.getElementById('goBtn').disabled = true;
+  resultData = null;
+  if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+
+  try {
+    if (platform === 'lichess') {
+      // Client-side game fetch
+      setStepsActive('fetch');
+      const games = await fetchLichessGames(username);
+      if (games.length === 0) {
+        showError('Не удалось загрузить партии. Проверь никнейм.');
+        return;
+      }
+
+      updateProgress(30, `Отправка ${games.length} партий на сервер...`);
+      setStepsActive('analyze');
+
+      // Send to backend
+      const resp = await fetch('/api/estimate/games', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform: 'lichess', username, games }),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json();
+        throw new Error(err.detail || `Ошибка сервера: ${resp.status}`);
+      }
+
+      updateProgress(50, 'Анализ на сервере...');
+      const result = await resp.json();
+
+      setStepsActive('complete');
+      updateProgress(100, 'Анализ завершён!');
+      showResults(result);
+    } else {
+      // Chess.com — server-side SSE
+      startChesscomAnalysis(username);
+    }
+  } catch (err) {
+    showError(String(err.message || err));
+  } finally {
+    document.getElementById('goBtn').disabled = false;
+  }
+}
+
+// ── Results display ────────────────────────────────────────────────
 
 function showResults(data) {
   resultData = data;
   document.getElementById('results').classList.add('active');
 
-  // TC cards
-  const grid = document.getElementById('tcGrid');
-  grid.innerHTML = '';
   const tcs = Object.keys(data.time_controls).sort((a, b) => {
     const order = ['bullet', 'blitz', 'rapid', 'classical', 'correspondence'];
     return order.indexOf(a) - order.indexOf(b);
   });
+
+  const validTcs = tcs.filter(tc => !data.time_controls[tc].error);
+  document.getElementById('tcInfo').textContent =
+    `Найдено ${data.total_games} партий, ${validTcs.length} контролей.`;
+
+  // TC cards
+  const grid = document.getElementById('tcGrid');
+  grid.innerHTML = '';
 
   tcs.forEach(tc => {
     const tcData = data.time_controls[tc];
@@ -297,10 +436,8 @@ function showResults(data) {
     card.className = 'tc-card';
 
     if (tcData.error) {
-      card.innerHTML = `
-        <div class="title">${TC_NAMES[tc] || tc}</div>
-        <div class="platform-rating" style="color:#f87171;">Ошибка: ${tcData.error}</div>
-      `;
+      card.innerHTML = `<div class="title">${TC_NAMES[tc] || tc}</div>
+        <div class="platform-rating" style="color:#f87171;">Ошибка: ${tcData.error}</div>`;
       grid.appendChild(card);
       return;
     }
@@ -317,7 +454,6 @@ function showResults(data) {
     const platRating = lastDaily && lastDaily.user_platform_rating !== null
       ? lastDaily.user_platform_rating : '—';
 
-    // Badge
     let badgeHtml = '<span class="badge badge-none">нет якорей</span>';
     if (tcData.regression_fallback) {
       badgeHtml = '<span class="badge badge-regression">регрессия</span>';
@@ -325,8 +461,6 @@ function showResults(data) {
       badgeHtml = `<span class="badge badge-direct">${tcData.direct_anchors} прямых</span>`;
     } else if (tcData.total_anchors > 0) {
       badgeHtml = `<span class="badge badge-indirect">${tcData.total_anchors} косвенных</span>`;
-    } else if (tcData.crowd_fallback) {
-      badgeHtml = '<span class="badge badge-none">крауд</span>';
     }
 
     let offsetInfo = '';
@@ -336,9 +470,7 @@ function showResults(data) {
     }
 
     let fallbackBadge = '';
-    if (tcData.regression_fallback) {
-      fallbackBadge = '<div class="fallback-badge">только регрессия</div>';
-    }
+    if (tcData.regression_fallback) fallbackBadge = '<div class="fallback-badge">только регрессия</div>';
 
     card.innerHTML = `
       <div class="title">${TC_NAMES[tc] || tc}</div>
@@ -347,8 +479,7 @@ function showResults(data) {
       <div class="platform-rating">Платформа: ${platRating}</div>
       ${offsetInfo}
       <div class="meta">${badgeHtml} <span>${tcData.total_games} игр</span></div>
-      ${fallbackBadge}
-    `;
+      ${fallbackBadge}`;
     grid.appendChild(card);
   });
 
@@ -356,7 +487,7 @@ function showResults(data) {
   const tabsContainer = document.getElementById('tcTabs');
   tabsContainer.innerHTML = '';
   let firstValidTc = null;
-  tcs.forEach((tc, i) => {
+  tcs.forEach(tc => {
     const tcData = data.time_controls[tc];
     if (tcData.error || !tcData.daily_estimates || tcData.daily_estimates.length === 0) return;
     if (!firstValidTc) firstValidTc = tc;
@@ -373,8 +504,6 @@ function showResults(data) {
   });
 
   if (firstValidTc) renderChart(firstValidTc);
-
-  // Anchors
   renderAnchors(data);
 }
 
@@ -399,51 +528,24 @@ function renderChart(tc) {
     data: {
       labels,
       datasets: [
-        {
-          label: 'Рейтинг на платформе',
-          data: platData,
-          borderColor: '#60a5fa',
-          backgroundColor: 'rgba(96, 165, 250, 0.1)',
-          borderWidth: 2,
-          pointRadius: 2,
-          pointHoverRadius: 5,
-          tension: 0.3,
-          fill: false,
-        },
-        {
-          label: 'Оценка FIDE',
-          data: fideData,
-          borderColor: '#4ade80',
-          backgroundColor: 'rgba(74, 222, 128, 0.1)',
-          borderWidth: 2,
-          pointRadius: 2,
-          pointHoverRadius: 5,
-          tension: 0.3,
-          fill: false,
-        }
+        { label: 'Рейтинг на платформе', data: platData,
+          borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,0.1)',
+          borderWidth: 2, pointRadius: 2, pointHoverRadius: 5, tension: 0.3, fill: false },
+        { label: 'Оценка FIDE', data: fideData,
+          borderColor: '#4ade80', backgroundColor: 'rgba(74,222,128,0.1)',
+          borderWidth: 2, pointRadius: 2, pointHoverRadius: 5, tension: 0.3, fill: false }
       ]
     },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
+      responsive: true, maintainAspectRatio: false,
       interaction: { intersect: false, mode: 'index' },
       plugins: {
         legend: { labels: { color: '#888', font: { size: 12 } } },
-        tooltip: {
-          callbacks: {
-            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y !== null ? Math.round(ctx.parsed.y) : '—'}`
-          }
-        }
+        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y !== null ? Math.round(ctx.parsed.y) : '—'}` } }
       },
       scales: {
-        x: {
-          ticks: { color: '#555', maxTicksLimit: 20, font: { size: 10 } },
-          grid: { color: '#1a1a20' },
-        },
-        y: {
-          ticks: { color: '#555', font: { size: 11 } },
-          grid: { color: '#1a1a20' },
-        }
+        x: { ticks: { color: '#555', maxTicksLimit: 20, font: { size: 10 } }, grid: { color: '#1a1a20' } },
+        y: { ticks: { color: '#555', font: { size: 11 } }, grid: { color: '#1a1a20' } }
       }
     }
   });
@@ -456,16 +558,14 @@ function renderAnchors(data) {
   const anchors = [];
   Object.entries(data.time_controls).forEach(([tc, tcData]) => {
     if (tcData.anchors) {
-      tcData.anchors.forEach(a => {
-        anchors.push({ ...a, _tc: tc });
-      });
+      tcData.anchors.forEach(a => anchors.push({ ...a, _tc: tc }));
     }
   });
 
   anchors.sort((a, b) => new Date(b.date) - new Date(a.date));
 
   if (anchors.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#555;padding:20px;">Якорей не найдено. Используется регрессионная формула (на основе статистики FIDE).</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#555;padding:20px;">Якорей не найдено. Используется регрессионная формула.</td></tr>';
     return;
   }
 
@@ -482,8 +582,7 @@ function renderAnchors(data) {
       <td class="fide-val">${a.fide_rating || '—'}</td>
       <td class="offset-val">${offsetVal > 0 ? '+' : ''}${offsetVal}</td>
       <td>${a.weight !== undefined ? a.weight.toFixed(3) : '—'}</td>
-      <td>${a.direct ? '<span class="direct-badge">прямой</span>' : '<span class="indirect-badge">косвенный</span>'}</td>
-    `;
+      <td>${a.direct ? '<span class="direct-badge">прямой</span>' : '<span class="indirect-badge">косвенный</span>'}</td>`;
     tbody.appendChild(tr);
   });
 }

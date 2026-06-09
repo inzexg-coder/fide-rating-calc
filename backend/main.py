@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse
@@ -19,7 +19,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="FIDE Rating Calculator", version="2.0", lifespan=lifespan)
+app = FastAPI(title="FIDE Rating Calculator", version="3.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,18 +30,45 @@ app.add_middleware(
 )
 
 
+# ── Models ──────────────────────────────────────────────────────────
+
 class EstimateRequest(BaseModel):
     platform: str
     username: str
 
 
+class GameData(BaseModel):
+    game_id: str = ""
+    date: str = ""
+    speed: str = ""
+    time_class: str = ""
+    user_rating: int | None = None
+    opponent: str = ""
+    opponent_rating: int | None = None
+    opponent_title: str = ""
+    user_accuracy: float | None = None
+    opponent_accuracy: float | None = None
+    user_color: str = ""
+    result: str = ""
+    platform: str = "lichess"
+
+
+class BatchEstimateRequest(BaseModel):
+    platform: str
+    username: str
+    games: list[GameData] = []
+
+
+# ── Existing endpoints ──────────────────────────────────────────────
+
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "2.0"}
+    return {"status": "ok", "version": "3.0"}
 
 
 @app.post("/api/estimate")
 async def estimate(req: EstimateRequest):
+    """Legacy endpoint — uses server-side fetching (Chess.com works, Lichess may fail)."""
     if req.platform not in ("lichess", "chesscom"):
         raise HTTPException(400, "Platform must be 'lichess' or 'chesscom'")
     if not req.username.strip():
@@ -61,6 +88,7 @@ async def estimate(req: EstimateRequest):
 
 @app.get("/api/estimate/stream")
 async def estimate_stream(platform: str = Query(...), username: str = Query(...)):
+    """SSE endpoint — used by frontend for server-side fetching (Chess.com)."""
     if platform not in ("lichess", "chesscom"):
         raise HTTPException(400, "Platform must be 'lichess' or 'chesscom'")
     if not username.strip():
@@ -82,7 +110,6 @@ async def estimate_stream(platform: str = Query(...), username: str = Query(...)
 
         task = asyncio.create_task(run())
 
-        # Send initial progress
         yield f"event: progress\ndata: {json.dumps({'step': 'fetch', 'message': 'Начинаю анализ...', 'percent': 0}, ensure_ascii=False)}\n\n"
 
         result_sent = False
@@ -95,7 +122,6 @@ async def estimate_stream(platform: str = Query(...), username: str = Query(...)
                     data = json.dumps({"step": step, "message": message, "percent": percent}, ensure_ascii=False)
                     yield f"event: progress\ndata: {data}\n\n"
                     if percent >= 100:
-                        # Wait a bit for the result
                         try:
                             msg_type2, result_data = await asyncio.wait_for(queue.get(), timeout=3.0)
                             if isinstance(result_data, dict):
@@ -103,7 +129,6 @@ async def estimate_stream(platform: str = Query(...), username: str = Query(...)
                                 yield f"event: result\ndata: {final}\n\n"
                             result_sent = True
                         except asyncio.TimeoutError:
-                            # No result after 100%? Stop
                             result_sent = True
 
                 elif msg_type == "result":
@@ -130,6 +155,65 @@ async def estimate_stream(platform: str = Query(...), username: str = Query(...)
                 continue
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+# ── NEW: Client‑submitted games endpoint ────────────────────────────
+
+@app.post("/api/estimate/games")
+async def estimate_games(req: BatchEstimateRequest):
+    """Client sends pre-fetched game data (for Lichess, which is blocked from server)."""
+    if req.platform not in ("lichess", "chesscom"):
+        raise HTTPException(400, "Platform must be 'lichess' or 'chesscom'")
+    if not req.username.strip():
+        raise HTTPException(400, "Username is required")
+    if not req.games:
+        raise HTTPException(400, "No games provided")
+
+    from fetchers import GameRecord
+
+    games = []
+    for g in req.games:
+        try:
+            from datetime import datetime, timezone
+            dt = datetime.fromisoformat(g.date) if g.date else datetime.now(tz=timezone.utc)
+        except (ValueError, TypeError):
+            dt = datetime.now(tz=timezone.utc)
+
+        rec = GameRecord(
+            game_id=g.game_id,
+            date=dt,
+            speed=g.speed,
+            time_class=g.time_class,
+            user_rating=g.user_rating,
+            opponent=g.opponent,
+            opponent_rating=g.opponent_rating,
+            opponent_title=g.opponent_title,
+            user_accuracy=g.user_accuracy,
+            opponent_accuracy=g.opponent_accuracy,
+            user_color=g.user_color,
+            result=g.result,
+            platform=g.platform,
+        )
+        games.append(rec)
+
+    estimator = Estimator()
+    try:
+        result = await estimator.estimate_from_games(req.platform, req.username.strip(), games)
+        if "error" in result:
+            raise HTTPException(400, result["error"])
+        return result
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"Internal error: {str(e)}")
+
+
+# ── NEW: Lichess proxy endpoint (client-fetched games) ─────────────
+
+@app.post("/api/estimate/stream/games")
+async def estimate_stream_games(req: BatchEstimateRequest):
+    """SSE endpoint for client-provided games."""
+    return await estimate_games(req)
 
 
 # Serve frontend static files
