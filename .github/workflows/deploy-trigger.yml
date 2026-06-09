@@ -41,7 +41,7 @@ jobs:
               actor: $actor
             }')
 
-          SIGNATURE=$(echo -n "$CLIENT_DATA" | openssl dgst -sha256 -hmac "${{ secrets.DISPATCH_SECRET }}" | cut -d ' ' -f2)
+          SIGNATURE=$(echo -n "$CLIENT_DATA" | openssl dgst -sha256 -hmac "${{ secrets.FIDE_SECRET }}" | cut -d ' ' -f2)
 
           FINAL_CLIENT_DATA=$(echo "$CLIENT_DATA" | jq --arg sig "$SIGNATURE" '. + {signature: $sig}')
 
