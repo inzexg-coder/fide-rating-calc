@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FIDE Rating Estimator</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f13; color: #e0e0e0; min-height: 100vh; }
+.container { max-width: 1200px; margin: 0 auto; padding: 40px 20px; }
+h1 { font-size: 32px; font-weight: 700; color: #fff; margin-bottom: 8px; }
+h1 span { background: linear-gradient(135deg, #7c3aed, #2563eb); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.subtitle { color: #888; margin-bottom: 32px; font-size: 14px; }
+
+.input-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 32px; }
+.platform-btn { padding: 10px 20px; border: 2px solid #333; border-radius: 8px; background: #1a1a20; color: #888; cursor: pointer; font-size: 14px; font-weight: 600; transition: all .2s; }
+.platform-btn.active { border-color: #7c3aed; color: #fff; background: #2a1a3e; }
+.platform-btn:hover { border-color: #555; }
+input[type="text"] { flex: 1; min-width: 200px; padding: 12px 16px; border: 2px solid #333; border-radius: 8px; background: #1a1a20; color: #fff; font-size: 16px; outline: none; transition: border-color .2s; }
+input[type="text"]:focus { border-color: #7c3aed; }
+.btn-go { padding: 12px 32px; border: none; border-radius: 8px; background: linear-gradient(135deg, #7c3aed, #2563eb); color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; transition: opacity .2s; }
+.btn-go:disabled { opacity: .5; cursor: not-allowed; }
+.btn-go:hover:not(:disabled) { opacity: .9; }
+
+.loading { display: none; text-align: center; padding: 60px 0; }
+.loading.active { display: block; }
+.spinner { width: 48px; height: 48px; border: 4px solid #333; border-top-color: #7c3aed; border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 16px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading p { color: #888; font-size: 14px; }
+
+.error { display: none; padding: 16px; background: #2d1414; border: 1px solid #ef4444; border-radius: 8px; color: #f87171; margin-bottom: 24px; }
+.error.active { display: block; }
+
+.results { display: none; }
+.results.active { display: block; }
+
+.tc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 32px; }
+.tc-card { background: #1a1a20; border: 1px solid #2a2a32; border-radius: 12px; padding: 20px; text-align: center; }
+.tc-card .title { font-size: 14px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+.tc-card .fide-cat { font-size: 11px; color: #555; margin-bottom: 12px; }
+.tc-card .rating { font-size: 42px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+.tc-card .rating.none { color: #555; }
+.tc-card .platform-rating { font-size: 14px; color: #666; margin-bottom: 12px; }
+.tc-card .meta { font-size: 12px; color: #555; }
+.tc-card .meta span { display: inline-block; margin: 0 6px; }
+.tc-card .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.badge-direct { background: #1a3a1a; color: #4ade80; }
+.badge-indirect { background: #1a1a2e; color: #60a5fa; }
+.badge-none { background: #2a1a1a; color: #f87171; }
+
+.chart-container { background: #1a1a20; border: 1px solid #2a2a32; border-radius: 12px; padding: 20px; margin-bottom: 24px; }
+.chart-container h3 { font-size: 16px; margin-bottom: 16px; color: #ccc; }
+.tc-tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.tc-tab { padding: 6px 16px; border: 1px solid #333; border-radius: 6px; background: transparent; color: #888; cursor: pointer; font-size: 13px; transition: all .2s; }
+.tc-tab.active { border-color: #7c3aed; color: #fff; background: #2a1a3e; }
+.tc-tab:hover { border-color: #555; }
+.tc-tab .count { color: #555; font-size: 11px; margin-left: 4px; }
+.chart-wrap { position: relative; height: 400px; }
+
+.anchors-section { margin-top: 24px; }
+.anchors-section h3 { font-size: 16px; margin-bottom: 12px; color: #ccc; }
+.anchors-table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; padding: 10px 12px; border-bottom: 2px solid #2a2a32; color: #888; font-weight: 600; }
+td { padding: 8px 12px; border-bottom: 1px solid #222; }
+tr:hover td { background: #1a1a25; }
+.fide-val { color: #4ade80; font-weight: 600; }
+.offset-val { color: #60a5fa; }
+.direct-badge { color: #4ade80; }
+.indirect-badge { color: #60a5fa; }
+
+.summary { text-align: center; padding: 20px; color: #666; font-size: 13px; margin-top: 24px; }
+.summary span { margin: 0 12px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>♟ <span>FIDE Rating Estimator</span></h1>
+  <p class="subtitle">Анализ твоих партий и оценка FIDE-рейтинга по якорям (титулованные соперники)</p>
+
+  <div class="input-row">
+    <button class="platform-btn active" data-platform="lichess">Lichess</button>
+    <button class="platform-btn" data-platform="chesscom">Chess.com</button>
+    <input type="text" id="username" placeholder="Введи никнейм..." autocomplete="off">
+    <button class="btn-go" id="btnGo">Оценить</button>
+  </div>
+
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <p>Анализирую партии, ищу титулованных соперников, запрашиваю FIDE...</p>
+  </div>
+
+  <div class="error" id="error"></div>
+
+  <div class="results" id="results">
+    <div class="summary" id="summary"></div>
+    <div class="tc-grid" id="tcGrid"></div>
+
+    <div class="chart-container">
+      <h3>📈 График рейтинга по дням</h3>
+      <div class="tc-tabs" id="tcTabs"></div>
+      <div class="chart-wrap">
+        <canvas id="chart"></canvas>
+      </div>
+    </div>
+
+    <div class="anchors-section">
+      <h3>⚓ Якоря (титулованные соперники)</h3>
+      <div class="anchors-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Дата</th>
+              <th>Соперник</th>
+              <th>Титул</th>
+              <th>Контроль</th>
+              <th>Рейтинг (платф.)</th>
+              <th>FIDE рейтинг</th>
+              <th>Offset</th>
+              <th>Вес</th>
+              <th>Тип</th>
+            </tr>
+          </thead>
+          <tbody id="anchorsBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let platform = 'lichess';
+let resultData = null;
+let chartInstance = null;
+
+document.querySelectorAll('.platform-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.platform-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    platform = btn.dataset.platform;
+  });
+});
+
+document.getElementById('username').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('btnGo').click();
+});
+
+document.getElementById('btnGo').addEventListener('click', async () => {
+  const username = document.getElementById('username').value.trim();
+  if (!username) return;
+  
+  const btn = document.getElementById('btnGo');
+  btn.disabled = true;
+  btn.textContent = 'Анализирую...';
+  document.getElementById('loading').classList.add('active');
+  document.getElementById('error').classList.remove('active');
+  document.getElementById('results').classList.remove('active');
+  resultData = null;
+
+  try {
+    const res = await fetch('/api/estimate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform, username })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    resultData = await res.json();
+    renderResults(resultData);
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Оценить';
+    document.getElementById('loading').classList.remove('active');
+  }
+});
+
+function showError(msg) {
+  const el = document.getElementById('error');
+  el.textContent = '❌ ' + msg;
+  el.classList.add('active');
+}
+
+const TC_NAMES = {
+  bullet: 'Пуля', blitz: 'Блиц', rapid: 'Рапид', classical: 'Классика', correspondence: 'Переписка'
+};
+const TC_ORDER = ['bullet', 'blitz', 'rapid', 'classical', 'correspondence'];
+
+function renderResults(data) {
+  document.getElementById('results').classList.add('active');
+
+  // Summary
+  document.getElementById('summary').innerHTML = `
+    <span>👤 ${data.username}</span>
+    <span>📋 ${data.total_games} партий</span>
+    <span>💾 ${data.cache_stats.total_entries} FIDE-записей в кэше</span>
+  `;
+
+  // TC cards
+  const grid = document.getElementById('tcGrid');
+  grid.innerHTML = '';
+  const tcs = Object.keys(data.time_controls).sort((a, b) => TC_ORDER.indexOf(a) - TC_ORDER.indexOf(b));
+  
+  tcs.forEach(tc => {
+    const tcData = data.time_controls[tc];
+    if (tcData.error) return;
+    
+    const card = document.createElement('div');
+    card.className = 'tc-card';
+    
+    const rating = tcData.current_estimate;
+    const ratingHtml = rating !== null && rating !== undefined
+      ? `<div class="rating">${Math.round(rating)}</div>`
+      : `<div class="rating none">—</div>`;
+    
+    const totalAnchors = tcData.total_anchors || 0;
+    const directAnchors = tcData.direct_anchors || 0;
+    const indirectAnchors = tcData.indirect_anchors || 0;
+    
+    let badgeHtml = '';
+    if (directAnchors > 0) {
+      badgeHtml = `<span class="badge badge-direct">${directAnchors} прямых</span>`;
+    } else if (indirectAnchors > 0) {
+      badgeHtml = `<span class="badge badge-indirect">${indirectAnchors} косвенных</span>`;
+    } else {
+      badgeHtml = `<span class="badge badge-none">нет якорей</span>`;
+    }
+    
+    // Get the last user platform rating from daily_estimates
+    const daily = tcData.daily_estimates || [];
+    const lastDaily = daily.length > 0 ? daily[daily.length - 1] : null;
+    const platRating = lastDaily !== null && lastDaily.user_platform_rating !== null
+      ? lastDaily.user_platform_rating : '—';
+    
+    card.innerHTML = `
+      <div class="title">${TC_NAMES[tc] || tc}</div>
+      <div class="fide-cat">→ FIDE ${tcData.fide_category}</div>
+      ${ratingHtml}
+      <div class="platform-rating">Платформа: ${platRating}</div>
+      <div class="meta">${badgeHtml} <span>${tcData.total_games} игр</span></div>
+    `;
+    grid.appendChild(card);
+  });
+
+  // TC tabs for chart
+  const tabsContainer = document.getElementById('tcTabs');
+  tabsContainer.innerHTML = '';
+  tcs.forEach((tc, i) => {
+    const tcData = data.time_controls[tc];
+    if (tcData.error || !tcData.daily_estimates || tcData.daily_estimates.length === 0) return;
+    const tab = document.createElement('button');
+    tab.className = 'tc-tab' + (i === 0 ? ' active' : '');
+    tab.dataset.tc = tc;
+    tab.innerHTML = `${TC_NAMES[tc] || tc} <span class="count">(${tcData.daily_estimates.length})</span>`;
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tc-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      renderChart(tc);
+    });
+    tabsContainer.appendChild(tab);
+  });
+
+  // Render first TC chart
+  const firstTc = tcs.find(tc => {
+    const d = data.time_controls[tc];
+    return d && !d.error && d.daily_estimates && d.daily_estimates.length > 0;
+  });
+  if (firstTc) renderChart(firstTc);
+
+  // Anchors table
+  renderAnchors(data);
+}
+
+function renderChart(tc) {
+  if (!resultData) return;
+  const tcData = resultData.time_controls[tc];
+  if (!tcData || !tcData.daily_estimates) return;
+
+  const daily = tcData.daily_estimates;
+  const labels = daily.map(d => {
+    const dt = new Date(d.date);
+    return dt.toLocaleDateString('ru', { day: 'numeric', month: 'short', year: '2-digit' });
+  });
+  const platData = daily.map(d => d.user_platform_rating);
+  const fideData = daily.map(d => d.estimated_fide);
+
+  const ctx = document.getElementById('chart').getContext('2d');
+
+  if (chartInstance) chartInstance.destroy();
+
+  chartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Рейтинг на платформе',
+          data: platData,
+          borderColor: '#60a5fa',
+          backgroundColor: 'rgba(96, 165, 250, 0.1)',
+          borderWidth: 2,
+          pointRadius: 2,
+          pointHoverRadius: 5,
+          tension: 0.3,
+          fill: false,
+        },
+        {
+          label: 'Оценка FIDE',
+          data: fideData,
+          borderColor: '#4ade80',
+          backgroundColor: 'rgba(74, 222, 128, 0.1)',
+          borderWidth: 2,
+          pointRadius: 2,
+          pointHoverRadius: 5,
+          tension: 0.3,
+          fill: false,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { labels: { color: '#888', font: { size: 12 } } },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y !== null ? Math.round(ctx.parsed.y) : '—'}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          display: true,
+          ticks: { color: '#555', maxTicksLimit: 20, font: { size: 10 } },
+          grid: { color: '#1a1a20' },
+        },
+        y: {
+          display: true,
+          ticks: { color: '#555', font: { size: 11 } },
+          grid: { color: '#1a1a20' },
+        }
+      }
+    }
+  });
+}
+
+function renderAnchors(data) {
+  const tbody = document.getElementById('anchorsBody');
+  tbody.innerHTML = '';
+  
+  const anchors = [];
+  Object.entries(data.time_controls).forEach(([tc, tcData]) => {
+    if (tcData.anchors) {
+      tcData.anchors.forEach(a => {
+        anchors.push({ ...a, _tc: tc });
+      });
+    }
+  });
+  
+  anchors.sort((a, b) => new Date(b.date) - new Date(a.date));
+  
+  if (anchors.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#555;padding:20px;">Якорей не найдено</td></tr>';
+    return;
+  }
+  
+  anchors.forEach(a => {
+    const tr = document.createElement('tr');
+    const dt = new Date(a.date);
+    tr.innerHTML = `
+      <td>${dt.toLocaleDateString('ru')}</td>
+      <td>${a.opponent}</td>
+      <td><strong>${a.title}</strong></td>
+      <td>${TC_NAMES[a.time_class] || a.time_class}</td>
+      <td>${a.platform_rating}</td>
+      <td class="fide-val">${a.fide_rating}</td>
+      <td class="offset-val">${a.offset > 0 ? '+' : ''}${a.offset}</td>
+      <td>${a.weight}</td>
+      <td>${a.direct ? '<span class="direct-badge">прямой</span>' : '<span class="indirect-badge">косвенный</span>'}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+</script>
+</body>
+</html>
