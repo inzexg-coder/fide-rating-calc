@@ -1,10 +1,22 @@
 import json
 import aiohttp
 import asyncio
+import socket
 from typing import AsyncIterator, Optional
 from datetime import datetime, timezone
 
 from fide_titles import FIDE_TITLES, TC_MAP
+from config import LICHESS_TOKEN
+
+_LICHESS_HEADERS = {"Authorization": f"Bearer {LICHESS_TOKEN}"} if LICHESS_TOKEN else {}
+
+# ── IPv4‑forced connector (Lichess IPv6 is flaky on this server) ─────
+_IPV4_CONNECTOR = aiohttp.TCPConnector(family=socket.AF_INET, force_close=True)
+
+
+def _make_session() -> aiohttp.ClientSession:
+    """Return a ClientSession that forces IPv4."""
+    return aiohttp.ClientSession(connector=_IPV4_CONNECTOR, timeout=aiohttp.ClientTimeout(total=120))
 
 
 class GameRecord:
@@ -39,29 +51,38 @@ async def _lich_stream(session, url, params) -> AsyncIterator[dict]:
     headers = {"Accept": "application/x-ndjson"}
     max_retries = 3
     for attempt in range(max_retries):
-        async with session.get(url, params=params, headers=headers, timeout=aiohttp.ClientTimeout(total=180)) as resp:
-            if resp.status == 429:
-                retry_after = int(resp.headers.get("Retry-After", "5"))
-                await asyncio.sleep(retry_after)
-                continue
-            if resp.status != 200:
+        try:
+            async with session.get(url, params=params, headers=headers, timeout=aiohttp.ClientTimeout(total=180)) as resp:
+                if resp.status == 429:
+                    retry_after = int(resp.headers.get("Retry-After", "5"))
+                    await asyncio.sleep(retry_after)
+                    continue
+                if resp.status != 200:
+                    return
+                async for line in resp.content:
+                    line = line.strip()
+                    if line:
+                        try:
+                            yield json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
                 return
-            async for line in resp.content:
-                line = line.strip()
-                if line:
-                    try:
-                        yield json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
+        except (asyncio.TimeoutError, aiohttp.ClientError, OSError) as exc:
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)  # exponential backoff
+                continue
             return
 
 
 async def _lich_get_user(session, username: str) -> dict:
-    """Fetch Lichess user profile (for full name and title info)."""
-    async with session.get(LICHESS_USER_URL.format(username=username),
-                           timeout=aiohttp.ClientTimeout(total=10)) as resp:
-        if resp.status == 200:
-            return await resp.json()
+    """Fetch Lichess user profile (for full name and title info + FIDE rating)."""
+    try:
+        async with session.get(LICHESS_USER_URL.format(username=username),
+                               timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            if resp.status == 200:
+                return await resp.json()
+            return {}
+    except (asyncio.TimeoutError, aiohttp.ClientError, OSError):
         return {}
 
 
@@ -73,7 +94,6 @@ async def _lich_user_name(session, username: str) -> str:
     last = profile.get("lastName", "")
     if first or last:
         return f"{first} {last}".strip()
-    # Fall back to display name
     return data.get("username", username)
 
 
@@ -86,12 +106,17 @@ async def _lich_profile_fide(session, username: str) -> Optional[int]:
     return None
 
 
+async def _lich_user_title(session, username: str) -> Optional[str]:
+    """Get the Lichess/FIDE title of a user."""
+    data = await _lich_get_user(session, username)
+    return data.get("title") or None
+
+
 async def fetch_lichess_games(username: str, max_games: int = 200, progress=None) -> list[GameRecord]:
     """Fetch ALL games for a user from Lichess."""
     games: list[GameRecord] = []
-    user_color_map = {}  # cache: opponent -> user's color in the game
 
-    async with aiohttp.ClientSession() as session:
+    async with _make_session() as session:
         params = {
             "max": max_games if max_games else 500,
             "accuracy": "true",
@@ -140,35 +165,37 @@ def _parse_lichess_game(raw: dict, target_user: str) -> Optional[GameRecord]:
         opp = white
         user_color = "black"
     else:
-        return None  # user not in this game
+        return None  # not our user's game
 
     opp_user = opp.get("user") or {}
-    opp_title = opp_user.get("title", "") or ""
+    opponent = opp_user.get("name", opp.get("name", "?"))
+    opp_title = opp.get("title") or opp_user.get("title") or ""
+    if opp_title:
+        opp_title = opp_title.upper()
 
-    # Only keep games with titled opponents if a title exists
-    # (we still need non-titled games for the user's rating history)
-    # Actually, we keep ALL games for the user's rating history timeline
+    user_rating = user.get("rating")
+    opp_rating = opp.get("rating")
 
-    ts = raw.get("createdAt", 0)  # milliseconds
-    if ts < 1e12:
-        ts *= 1000  # convert seconds to ms if needed
-    dt = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+    ts = raw.get("timestamp") or raw.get("createdAt", 0)
+    dt = datetime.fromtimestamp(ts / 1000, tz=timezone.utc) if ts else datetime.now(tz=timezone.utc)
 
-    # Get accuracy from analysis
-    user_analysis = user.get("analysis") or {}
-    opp_analysis = opp.get("analysis") or {}
-    user_acc = user_analysis.get("accuracy")
-    opp_acc = opp_analysis.get("accuracy")
+    # Accuracy is under analysis/accuracy for each side
+    analysis = raw.get("analysis") or {}
+    user_acc = (user.get("analysis") or {}).get("accuracy") or analysis.get("accuracy")
+    opp_acc = (opp.get("analysis") or {}).get("accuracy")
+
+    if user_acc is None:
+        user_acc = analysis.get("averageAccuracy") if raw.get("id") else None
 
     return GameRecord(
         game_id=raw.get("id"),
         date=dt,
         speed=raw.get("speed"),
         time_class=raw.get("speed"),
-        user_rating=user.get("rating"),
-        opponent=opp_user.get("name", "?"),
-        opponent_rating=opp.get("rating"),
-        opponent_title=opp_title if opp_title in FIDE_TITLES else "",
+        user_rating=user_rating,
+        opponent=opponent,
+        opponent_rating=opp_rating,
+        opponent_title=opp_title,
         user_accuracy=user_acc,
         opponent_accuracy=opp_acc,
         user_color=user_color,
@@ -181,14 +208,17 @@ def _parse_lichess_game(raw: dict, target_user: str) -> Optional[GameRecord]:
 # ── Chess.com ────────────────────────────────────────────────────────
 
 CHESSCOM_ARCHIVES_URL = "https://api.chess.com/pub/player/{username}/games/archives"
-CHESSCOM_PLAYER_URL = "https://api.chess.com/pub/player/{username}"
+CHESSCOM_USER_URL = "https://api.chess.com/pub/player/{username}"
 
 
 async def _cc_get_user(session, username: str) -> dict:
-    async with session.get(CHESSCOM_PLAYER_URL.format(username=username),
-                           timeout=aiohttp.ClientTimeout(total=10)) as resp:
-        if resp.status == 200:
-            return await resp.json()
+    try:
+        async with session.get(CHESSCOM_USER_URL.format(username=username),
+                               timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            if resp.status == 200:
+                return await resp.json()
+            return {}
+    except (asyncio.TimeoutError, aiohttp.ClientError):
         return {}
 
 
@@ -197,14 +227,23 @@ async def _cc_user_name(session, username: str) -> str:
     return data.get("name", username)
 
 
+async def _cc_opponent_fide(session, username: str) -> Optional[int]:
+    """Get FIDE rating from Chess.com profile if available."""
+    data = await _cc_get_user(session, username)
+    fide = data.get("fide")
+    if fide and isinstance(fide, (int, float)) and fide > 0:
+        return int(fide)
+    return None
+
+
 async def fetch_chesscom_games(username: str, max_games: int = 200, progress=None) -> list[GameRecord]:
     """Fetch ALL games for a user from Chess.com (month by month)."""
     games: list[GameRecord] = []
 
-    async with aiohttp.ClientSession() as session:
+    async with _make_session() as session:
         # Get available archives
         async with session.get(CHESSCOM_ARCHIVES_URL.format(username=username),
-                               timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                               timeout=aiohttp.ClientTimeout(total=15)) as resp:
             if resp.status != 200:
                 return games
             archives = (await resp.json()).get("archives", [])
@@ -217,22 +256,25 @@ async def fetch_chesscom_games(username: str, max_games: int = 200, progress=Non
         for url in archives:
             if max_games and len(games) >= max_games:
                 break
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                if resp.status != 200:
-                    continue
-                data = await resp.json()
-                for raw in data.get("games", []):
-                    if max_games and len(games) >= max_games:
-                        break
-                    try:
-                        rec = _parse_chesscom_game(raw, username)
-                        if rec:
-                            games.append(rec)
-                            if progress and len(games) % 25 == 0:
-                                await progress("fetch", f"Загружено {len(games)} партий...", 5 + int(len(games) / max(max_games, 1) * 20))
-                    except Exception:
+            try:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                    if resp.status != 200:
                         continue
-            await asyncio.sleep(0.3)  # be nice
+                    data = await resp.json()
+                    for raw in data.get("games", []):
+                        if max_games and len(games) >= max_games:
+                            break
+                        try:
+                            rec = _parse_chesscom_game(raw, username)
+                            if rec:
+                                games.append(rec)
+                                if progress and len(games) % 25 == 0:
+                                    await progress("fetch", f"Загружено {len(games)} партий...", 5 + int(len(games) / max(max_games, 1) * 20))
+                        except Exception:
+                            continue
+            except (asyncio.TimeoutError, aiohttp.ClientError):
+                continue
+            await asyncio.sleep(0.1)  # be nice
 
     games.sort(key=lambda g: g.date)
     return games
@@ -268,9 +310,6 @@ def _parse_chesscom_game(raw: dict, target_user: str) -> Optional[GameRecord]:
     else:
         return None
 
-    # Chess.com game export does NOT include titles directly.
-    # We'll check titles later by fetching opponent profiles.
-    # For now, mark opponent_title as empty — we enrich later.
     opp_username = opp.get("username", "?")
     user_rating = user.get("rating")
     opp_rating = opp.get("rating")
@@ -302,20 +341,18 @@ def _parse_chesscom_game(raw: dict, target_user: str) -> Optional[GameRecord]:
 async def _cc_opponent_titles(username: str, opponent_usernames: set[str]) -> dict[str, str]:
     """Fetch Chess.com profiles for all unique opponents to get their titles."""
     result = {}
-    async with aiohttp.ClientSession() as session:
+    async with _make_session() as session:
         for opp in opponent_usernames:
             data = await _cc_get_user(session, opp)
             title = data.get("title", "") or ""
             if title and title in FIDE_TITLES:
                 result[opp] = title
-            # Chess.com also has `fide` field — but we use FIDE API separately
             await asyncio.sleep(0.3)
     return result
 
 
 async def enrich_chesscom_titles(games: list[GameRecord]):
     """Enrich Chess.com games with opponent titles by fetching profiles."""
-    # Collect unique opponents
     opponents = {g.opponent for g in games if g.opponent != "?"}
     titles = await _cc_opponent_titles(None, opponents)
     for g in games:

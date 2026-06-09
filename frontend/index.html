@@ -44,7 +44,7 @@ input[type="text"]:focus { border-color: #7c3aed; }
 .results.active { display: block; }
 
 .tc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 32px; }
-.tc-card { background: #1a1a20; border: 1px solid #2a2a32; border-radius: 12px; padding: 20px; text-align: center; }
+.tc-card { background: #1a1a20; border: 1px solid #2a2a32; border-radius: 12px; padding: 20px; text-align: center; position: relative; }
 .tc-card .title { font-size: 14px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
 .tc-card .fide-cat { font-size: 11px; color: #555; margin-bottom: 12px; }
 .tc-card .rating { font-size: 42px; font-weight: 700; color: #fff; margin-bottom: 4px; }
@@ -56,7 +56,9 @@ input[type="text"]:focus { border-color: #7c3aed; }
 .badge-direct { background: #1a3a1a; color: #4ade80; }
 .badge-indirect { background: #1a1a2e; color: #60a5fa; }
 .badge-none { background: #2a1a1a; color: #f87171; }
+.badge-regression { background: #2a2a1a; color: #facc15; }
 .tc-card .offset-info { font-size: 12px; color: #60a5fa; margin-top: 4px; }
+.tc-card .fallback-badge { position: absolute; top: 8px; right: 8px; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; background: #2a2a1a; color: #facc15; border: 1px solid #555; }
 
 .chart-container { background: #1a1a20; border: 1px solid #2a2a32; border-radius: 12px; padding: 20px; margin-bottom: 24px; }
 .chart-container h3 { font-size: 16px; margin-bottom: 16px; color: #ccc; }
@@ -71,47 +73,63 @@ input[type="text"]:focus { border-color: #7c3aed; }
 .anchors-section h3 { font-size: 16px; margin-bottom: 12px; color: #ccc; }
 .anchors-table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { text-align: left; padding: 10px 12px; border-bottom: 2px solid #2a2a32; color: #888; font-weight: 600; }
-td { padding: 8px 12px; border-bottom: 1px solid #222; }
-tr:hover td { background: #1a1a25; }
+th { text-align: left; padding: 10px 8px; border-bottom: 1px solid #2a2a32; color: #555; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+td { padding: 8px; border-bottom: 1px solid #1a1a20; }
+tr:hover td { background: #1a1a20; }
 .fide-val { color: #4ade80; font-weight: 600; }
-.offset-val { color: #60a5fa; }
+.offset-val { color: #60a5fa; font-weight: 600; }
 .direct-badge { color: #4ade80; }
 .indirect-badge { color: #60a5fa; }
 
-.summary { text-align: center; padding: 20px; color: #666; font-size: 13px; margin-top: 24px; }
-.summary span { margin: 0 12px; }
+@media (max-width: 640px) {
+  .container { padding: 20px 12px; }
+  h1 { font-size: 24px; }
+  .input-row { flex-direction: column; }
+  input[type="text"] { width: 100%; }
+  .btn-go { width: 100%; }
+  .tc-grid { grid-template-columns: 1fr; }
+}
 </style>
 </head>
 <body>
 <div class="container">
-  <h1>♟ <span>FIDE Rating Estimator</span></h1>
-  <p class="subtitle">Анализ твоих партий и оценка FIDE-рейтинга по якорям (титулованные соперники)</p>
+  <h1>♟ <span>FIDE<span style="-webkit-text-fill-color:#888;"> Rating</span> Estimator</span></h1>
+  <p class="subtitle">Оценка FIDE рейтинга на основе партий с Lichess / Chess.com</p>
 
   <div class="input-row">
-    <button class="platform-btn active" data-platform="lichess">Lichess</button>
-    <button class="platform-btn" data-platform="chesscom">Chess.com</button>
-    <input type="text" id="username" placeholder="Введи никнейм..." autocomplete="off">
-    <button class="btn-go" id="btnGo">Оценить</button>
+    <button class="platform-btn active" data-platform="lichess">♟ Lichess</button>
+    <button class="platform-btn" data-platform="chesscom">☕ Chess.com</button>
+    <input type="text" id="usernameInput" placeholder="Введите никнейм..." value="Torii35">
+    <button class="btn-go" id="goBtn">Анализировать</button>
   </div>
 
+  <!-- Progress -->
   <div class="progress-section" id="progressSection">
-    <div class="progress-bar-bg"><div class="progress-bar" id="progressBar"></div></div>
+    <div class="progress-bar-bg">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
     <div class="progress-status">
-      <span class="progress-msg" id="progressMsg">Загрузка...</span>
+      <span class="progress-msg" id="progressMsg">Начинаю...</span>
       <span class="progress-pct" id="progressPct">0%</span>
     </div>
-    <div class="progress-steps" id="progressSteps"></div>
+    <div class="progress-steps" id="progressSteps">
+      <div class="progress-step active" data-step="fetch">Загрузка партий</div>
+      <div class="progress-step" data-step="analyze">Анализ по контролям</div>
+      <div class="progress-step" data-step="anchors">Поиск якорей (титулованные соперники)</div>
+      <div class="progress-step" data-step="chain">Поиск косвенных якорей</div>
+      <div class="progress-step" data-step="estimate">Расчёт FIDE рейтинга</div>
+      <div class="progress-step" data-step="complete">Готово!</div>
+    </div>
   </div>
 
-  <div class="error" id="error"></div>
+  <div class="error" id="errorMsg"></div>
 
+  <!-- Results -->
   <div class="results" id="results">
-    <div class="summary" id="summary"></div>
     <div class="tc-grid" id="tcGrid"></div>
 
     <div class="chart-container">
-      <h3>📈 График рейтинга по дням</h3>
+      <h3>📈 График изменения рейтинга</h3>
       <div class="tc-tabs" id="tcTabs"></div>
       <div class="chart-wrap">
         <canvas id="chart"></canvas>
@@ -119,7 +137,7 @@ tr:hover td { background: #1a1a25; }
     </div>
 
     <div class="anchors-section">
-      <h3>⚓ Якоря (титулованные соперники)</h3>
+      <h3>📋 Все якоря (титулованные соперники с FIDE)</h3>
       <div class="anchors-table-wrap">
         <table>
           <thead>
@@ -128,14 +146,16 @@ tr:hover td { background: #1a1a25; }
               <th>Соперник</th>
               <th>Титул</th>
               <th>Контроль</th>
-              <th>Рейтинг (платф.)</th>
-              <th>FIDE рейтинг</th>
+              <th>Рейтинг</th>
+              <th>FIDE</th>
               <th>Offset</th>
               <th>Вес</th>
               <th>Тип</th>
             </tr>
           </thead>
-          <tbody id="anchorsBody"></tbody>
+          <tbody id="anchorsBody">
+            <tr><td colspan="9" style="text-align:center;color:#555;padding:20px;">Загрузка...</td></tr>
+          </tbody>
         </table>
       </div>
     </div>
@@ -143,11 +163,19 @@ tr:hover td { background: #1a1a25; }
 </div>
 
 <script>
+const TC_NAMES = {
+  bullet: 'Bullet', blitz: 'Blitz', rapid: 'Rapid',
+  classical: 'Classical', correspondence: 'Correspondence',
+};
+
+const PLATFORM = { lichess: 'Lichess', chesscom: 'Chess.com' };
+
 let platform = 'lichess';
+let currentEvents = null;
 let resultData = null;
 let chartInstance = null;
-let currentES = null;
 
+// ── Platform toggle ──
 document.querySelectorAll('.platform-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.platform-btn').forEach(b => b.classList.remove('active'));
@@ -156,203 +184,160 @@ document.querySelectorAll('.platform-btn').forEach(btn => {
   });
 });
 
-document.getElementById('username').addEventListener('keydown', e => {
-  if (e.key === 'Enter') document.getElementById('btnGo').click();
+// ── Analysis trigger ──
+document.getElementById('goBtn').addEventListener('click', startAnalysis);
+document.getElementById('usernameInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') startAnalysis();
 });
 
-document.getElementById('btnGo').addEventListener('click', startEstimate);
+function setStepsActive(stepName) {
+  document.querySelectorAll('.progress-step').forEach(el => {
+    const s = el.dataset.step;
+    const steps = ['fetch', 'analyze', 'anchors', 'chain', 'estimate', 'complete'];
+    const idx = steps.indexOf(s);
+    const cur = steps.indexOf(stepName);
+    el.classList.toggle('active', s === stepName);
+    el.classList.toggle('done', idx < cur);
+    el.classList.remove('error');
+  });
+}
 
-function startEstimate() {
-  const username = document.getElementById('username').value.trim();
+function startAnalysis() {
+  const username = document.getElementById('usernameInput').value.trim();
   if (!username) return;
 
-  // Abort any existing connection
-  if (currentES) { currentES.close(); currentES = null; }
-
-  const btn = document.getElementById('btnGo');
-  btn.disabled = true;
-  btn.textContent = 'Анализирую...';
-  document.getElementById('progressSection').classList.add('active');
-  document.getElementById('progressBar').style.width = '0%';
-  document.getElementById('progressMsg').textContent = 'Начинаю...';
-  document.getElementById('progressPct').textContent = '0%';
-  document.getElementById('progressSteps').innerHTML = '';
-  document.getElementById('error').classList.remove('active');
+  // Reset
   document.getElementById('results').classList.remove('active');
+  document.getElementById('errorMsg').classList.remove('active');
+  document.getElementById('errorMsg').textContent = '';
+  document.getElementById('progressSection').classList.add('active');
+  document.getElementById('goBtn').disabled = true;
   resultData = null;
+  if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
 
-  // Add step indicators
-  const steps = [
-    { id: 'fetch', label: 'Загрузка партий' },
-    { id: 'analyze', label: 'Анализ партий' },
-    { id: 'anchors', label: 'Поиск якорей' },
-    { id: 'chain', label: 'Цепочки' },
-    { id: 'estimate', label: 'Расчёт рейтинга' },
-    { id: 'complete', label: 'Готово' },
-  ];
-  const stepsContainer = document.getElementById('progressSteps');
-  steps.forEach((s, i) => {
-    const div = document.createElement('div');
-    div.className = 'progress-step';
-    div.id = 'step-' + s.id;
-    div.textContent = `${i+1}. ${s.label}`;
-    stepsContainer.appendChild(div);
+  setStepsActive('fetch');
+  updateProgress(0, 'Начинаю анализ...');
+
+  // SSE
+  if (currentEvents) { currentEvents.close(); }
+  const url = `/api/estimate/stream?platform=${platform}&username=${encodeURIComponent(username)}`;
+  currentEvents = new EventSource(url);
+
+  currentEvents.addEventListener('progress', e => {
+    const data = JSON.parse(e.data);
+    updateProgress(data.percent, data.message);
+    setStepsActive(data.step);
+
+    if (data.percent >= 100) {
+      currentEvents.close();
+      currentEvents = null;
+    }
   });
 
-  // Connect via SSE
-  const es = new EventSource(`/api/estimate/stream?platform=${platform}&username=${encodeURIComponent(username)}`);
-  currentES = es;
+  currentEvents.addEventListener('result', e => {
+    const data = JSON.parse(e.data);
+    document.getElementById('goBtn').disabled = false;
+    currentEvents.close();
+    currentEvents = null;
+    setStepsActive('complete');
+    updateProgress(100, 'Анализ завершён!');
+    showResults(data);
+  });
 
-  es.addEventListener('progress', (e) => {
+  currentEvents.addEventListener('error', e => {
+    let msg = 'Неизвестная ошибка';
     try {
       const data = JSON.parse(e.data);
-      updateProgress(data);
-    } catch (err) { console.error('SSE parse error:', err); }
+      msg = data.detail || data.message || msg;
+    } catch {}
+    showError(msg);
+    document.getElementById('goBtn').disabled = false;
+    currentEvents.close();
+    currentEvents = null;
   });
 
-  es.addEventListener('result', (e) => {
-    try {
-      const data = JSON.parse(e.data);
-      resultData = data;
-      renderResults(data);
-      finishProgress(true);
-    } catch (err) { console.error('SSE result error:', err); }
-  });
-
-  es.addEventListener('error', (e) => {
-    // EventSource auto-reconnects on network errors
-    // If we got an actual error event from server:
-    if (e.data) {
-      try {
-        const data = JSON.parse(e.data);
-        showError(data.detail || 'Неизвестная ошибка');
-      } catch (err) {
-        showError('Ошибка соединения');
-      }
-      finishProgress(false);
-      es.close();
-      currentES = null;
+  // Global timeout — 5 minutes
+  setTimeout(() => {
+    if (currentEvents) {
+      currentEvents.close();
+      currentEvents = null;
+      showError('Превышено время ожидания (5 мин). Попробуй ещё раз.');
+      document.getElementById('goBtn').disabled = false;
     }
-  });
-
-  // Handle connection close
-  es.onerror = () => {
-    // Only treat as error if we haven't completed
-    if (!document.getElementById('results').classList.contains('active')) {
-      // Check if es is still connecting (readyState 0 = CONNECTING)
-      if (es.readyState === EventSource.CLOSED) {
-        // Only show error if we didn't get a result
-        setTimeout(() => {
-          if (!document.getElementById('results').classList.contains('active')) {
-            showError('Соединение прервано. Возможно, запрос слишком долгий.');
-            finishProgress(false);
-          }
-        }, 2000);
-      }
-    }
-  };
+  }, 300000);
 }
 
-function updateProgress(data) {
-  document.getElementById('progressBar').style.width = Math.min(data.percent, 100) + '%';
-  document.getElementById('progressMsg').textContent = data.message;
-  document.getElementById('progressPct').textContent = Math.min(data.percent, 100) + '%';
-
-  // Mark step as active
-  const stepEl = document.getElementById('step-' + data.step);
-  if (stepEl) {
-    document.querySelectorAll('.progress-step').forEach(s => s.classList.remove('active'));
-    stepEl.classList.add('active');
-  }
-
-  // Mark previous steps as done
-  const steps = ['fetch', 'analyze', 'anchors', 'chain', 'estimate', 'complete'];
-  const idx = steps.indexOf(data.step);
-  if (idx > 0) {
-    for (let i = 0; i < idx; i++) {
-      const el = document.getElementById('step-' + steps[i]);
-      if (el) { el.classList.remove('active'); el.classList.add('done'); }
-    }
-  }
-}
-
-function finishProgress(success) {
-  const btn = document.getElementById('btnGo');
-  btn.disabled = false;
-  btn.textContent = 'Оценить';
-
-  if (success) {
-    document.getElementById('step-complete').classList.remove('active');
-    document.getElementById('step-complete').classList.add('done');
-    document.getElementById('progressMsg').textContent = '✅ Анализ завершён!';
-    document.getElementById('progressBar').style.width = '100%';
-  }
+function updateProgress(percent, message) {
+  document.getElementById('progressBar').style.width = percent + '%';
+  document.getElementById('progressMsg').textContent = message;
+  document.getElementById('progressPct').textContent = percent + '%';
 }
 
 function showError(msg) {
-  const el = document.getElementById('error');
-  el.textContent = '❌ ' + msg;
-  el.classList.add('active');
-  finishProgress(false);
+  document.getElementById('errorMsg').textContent = '❌ ' + msg;
+  document.getElementById('errorMsg').classList.add('active');
+  document.getElementById('progressSection').classList.remove('active');
 }
 
-// ── Render results ──
-
-const TC_NAMES = {
-  bullet: 'Пуля', blitz: 'Блиц', rapid: 'Рапид', classical: 'Классика', correspondence: 'Переписка'
-};
-const TC_ORDER = ['bullet', 'blitz', 'rapid', 'classical', 'correspondence'];
-
-function renderResults(data) {
+function showResults(data) {
+  resultData = data;
   document.getElementById('results').classList.add('active');
-
-  // Summary
-  const totalAnchors = Object.values(data.time_controls).reduce((s, tc) => s + (tc.total_anchors || 0), 0);
-  document.getElementById('summary').innerHTML = `
-    <span>👤 ${data.username}</span>
-    <span>📋 ${data.total_games} партий</span>
-    <span>⚓ ${totalAnchors} якорей</span>
-    <span>💾 ${data.cache_stats.total_entries} FIDE-записей в кэше</span>
-  `;
 
   // TC cards
   const grid = document.getElementById('tcGrid');
   grid.innerHTML = '';
-  const tcs = Object.keys(data.time_controls).sort((a, b) => TC_ORDER.indexOf(a) - TC_ORDER.indexOf(b));
+  const tcs = Object.keys(data.time_controls).sort((a, b) => {
+    const order = ['bullet', 'blitz', 'rapid', 'classical', 'correspondence'];
+    return order.indexOf(a) - order.indexOf(b);
+  });
 
   tcs.forEach(tc => {
     const tcData = data.time_controls[tc];
-    if (tcData.error) return;
-
     const card = document.createElement('div');
     card.className = 'tc-card';
 
-    const current = tcData.current_estimate;
-    const rating = current ? current.estimated_fide : null;
-    const ratingHtml = rating !== null
-      ? `<div class="rating">${Math.round(rating)}</div>`
-      : `<div class="rating none">—</div>`;
-
-    const directAnchors = tcData.direct_anchors || 0;
-    const indirectAnchors = tcData.indirect_anchors || 0;
-
-    let badgeHtml = '';
-    if (directAnchors > 0) {
-      badgeHtml = `<span class="badge badge-direct">${directAnchors} прямых</span>`;
-    } else if (indirectAnchors > 0) {
-      badgeHtml = `<span class="badge badge-indirect">${indirectAnchors} косвенных</span>`;
-    } else {
-      badgeHtml = `<span class="badge badge-none">нет якорей</span>`;
+    if (tcData.error) {
+      card.innerHTML = `
+        <div class="title">${TC_NAMES[tc] || tc}</div>
+        <div class="platform-rating" style="color:#f87171;">Ошибка: ${tcData.error}</div>
+      `;
+      grid.appendChild(card);
+      return;
     }
 
     const daily = tcData.daily_estimates || [];
     const lastDaily = daily.length > 0 ? daily[daily.length - 1] : null;
-    const platRating = lastDaily && lastDaily.user_platform_rating !== null ? lastDaily.user_platform_rating : '—';
+    const current = tcData.current_estimate;
+
+    let ratingHtml = '<div class="rating none">—</div>';
+    if (current && current.estimated_fide) {
+      ratingHtml = `<div class="rating">${current.estimated_fide}</div>`;
+    }
+
+    const platRating = lastDaily && lastDaily.user_platform_rating !== null
+      ? lastDaily.user_platform_rating : '—';
+
+    // Badge
+    let badgeHtml = '<span class="badge badge-none">нет якорей</span>';
+    if (tcData.regression_fallback) {
+      badgeHtml = '<span class="badge badge-regression">регрессия</span>';
+    } else if (tcData.direct_anchors > 0) {
+      badgeHtml = `<span class="badge badge-direct">${tcData.direct_anchors} прямых</span>`;
+    } else if (tcData.total_anchors > 0) {
+      badgeHtml = `<span class="badge badge-indirect">${tcData.total_anchors} косвенных</span>`;
+    } else if (tcData.crowd_fallback) {
+      badgeHtml = '<span class="badge badge-none">крауд</span>';
+    }
 
     let offsetInfo = '';
     if (current && current.avg_offset !== null) {
       const sign = current.avg_offset > 0 ? '+' : '';
       offsetInfo = `<div class="offset-info">Ø offset: ${sign}${current.avg_offset}</div>`;
+    }
+
+    let fallbackBadge = '';
+    if (tcData.regression_fallback) {
+      fallbackBadge = '<div class="fallback-badge">только регрессия</div>';
     }
 
     card.innerHTML = `
@@ -362,6 +347,7 @@ function renderResults(data) {
       <div class="platform-rating">Платформа: ${platRating}</div>
       ${offsetInfo}
       <div class="meta">${badgeHtml} <span>${tcData.total_games} игр</span></div>
+      ${fallbackBadge}
     `;
     grid.appendChild(card);
   });
@@ -479,22 +465,23 @@ function renderAnchors(data) {
   anchors.sort((a, b) => new Date(b.date) - new Date(a.date));
 
   if (anchors.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#555;padding:20px;">Якорей не найдено. Возможно, ты играл только против слабых соперников.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#555;padding:20px;">Якорей не найдено. Используется регрессионная формула (на основе статистики FIDE).</td></tr>';
     return;
   }
 
   anchors.forEach(a => {
     const tr = document.createElement('tr');
     const dt = new Date(a.date);
+    const offsetVal = a.raw_offset !== undefined ? a.raw_offset : (a.offset || 0);
     tr.innerHTML = `
-      <td>${dt.toLocaleDateString('ru')}</td>
-      <td>${a.opponent}</td>
-      <td><strong>${a.title}</strong></td>
-      <td>${TC_NAMES[a.time_class] || a.time_class}</td>
-      <td>${a.platform_rating}</td>
-      <td class="fide-val">${a.fide_rating}</td>
-      <td class="offset-val">${a.offset > 0 ? '+' : ''}${a.offset}</td>
-      <td>${a.weight}</td>
+      <td>${isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('ru')}</td>
+      <td>${a.opponent || '—'}</td>
+      <td><strong>${a.title || '—'}</strong></td>
+      <td>${TC_NAMES[a.time_class] || a.time_class || '—'}</td>
+      <td>${a.platform_rating || '—'}</td>
+      <td class="fide-val">${a.fide_rating || '—'}</td>
+      <td class="offset-val">${offsetVal > 0 ? '+' : ''}${offsetVal}</td>
+      <td>${a.weight !== undefined ? a.weight.toFixed(3) : '—'}</td>
       <td>${a.direct ? '<span class="direct-badge">прямой</span>' : '<span class="indirect-badge">косвенный</span>'}</td>
     `;
     tbody.appendChild(tr);

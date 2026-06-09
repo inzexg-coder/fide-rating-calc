@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 cache/fide_cache.json
 venv/
+backend/config.py

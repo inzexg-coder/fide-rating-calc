@@ -8,7 +8,8 @@ import aiohttp
 
 from fide_titles import FIDE_TITLES, TC_MAP
 from fetchers import GameRecord, fetch_lichess_games, fetch_chesscom_games, enrich_chesscom_titles
-from fide_client import FIDEClient
+from fetchers import _lich_profile_fide, _lich_get_user, _make_session, _lich_user_title
+from fetchers import _cc_opponent_fide
 from regression import estimate_via_regression
 
 # ── Crowdsourcing ───────────────────────────────────────────────────
@@ -27,7 +28,6 @@ def _save_crowd(data: dict):
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 def _bracket(rating: int) -> str:
-    """Return rating bracket key like '1200-1299'."""
     low = (rating // 100) * 100
     return f"{low}-{low+99}"
 
@@ -58,7 +58,6 @@ class Anchor:
         self.opponent_accuracy = game.opponent_accuracy
         self.direct = direct
         self.is_titled = is_titled
-        # Compute accuracy-adjusted offset and weight
         self.adjusted_offset = self._adjust_offset()
         self.weight = self._compute_weight()
 
@@ -66,15 +65,14 @@ class Anchor:
         ua = self.user_accuracy
         oa = self.opponent_accuracy
         if ua is not None and oa is not None:
-            return (ua + oa) / 200.0  # 0..1
+            return (ua + oa) / 200.0
         if ua is not None:
             return ua / 100.0
         if oa is not None:
             return oa / 100.0
-        return 0.5  # default
+        return 0.5
 
     def _adjust_offset(self) -> float:
-        """Accuracy boost: high accuracy → offset inflated → higher FIDE estimate."""
         acc = self._avg_accuracy()
         # multiplier: 0.5 → 1.0,  0.75 → 1.125,  1.0 → 1.25
         multiplier = 1.0 + (acc - 0.5) * 0.5
@@ -82,13 +80,10 @@ class Anchor:
 
     def _compute_weight(self) -> float:
         w = 1.0
-        # Accuracy factor
         acc = self._avg_accuracy()
-        w *= acc
-        # Direct vs indirect
+        w *= max(acc, 0.1)
         if not self.direct:
             w *= 0.5
-        # Titled vs non-titled
         if not self.is_titled:
             w *= 0.5
         return max(w, 0.01)
@@ -135,18 +130,19 @@ class DailyEstimate:
             "estimated_fide": self.estimated_fide,
             "num_anchors": self.num_anchors,
             "total_weight": round(self.total_weight, 3),
-            "avg_offset": round(self.avg_offset, 1),
+            "avg_offset": round(self.avg_offset, 2),
         }
 
 
 class Estimator:
+    """Main estimation engine with 6-level cascade."""
+
     def __init__(self, progress_callback=None):
-        self.fide = FIDEClient()
         self._progress = progress_callback
 
     async def _report(self, step: str, message: str, percent: int):
         if self._progress:
-            await self._progress(step=step, message=message, percent=percent)
+            await self._progress(step, message, min(percent, 99))
 
     # ── Main entry ──────────────────────────────────────────────────
 
@@ -176,67 +172,81 @@ class Estimator:
             pct = 15 + int(65 * (idx + 1) / len(tc_list))
             await self._report("analyze", f"[{idx+1}/{len(tc_list)}] {tc} ({len(tc_games)} партий)...", pct)
             try:
-                result = await self._process_time_control(tc, tc_games, platform)
+                result = await self._process_time_control(tc, tc_games, platform, username)
                 results[tc] = result
             except Exception as e:
                 results[tc] = {"error": str(e)}
+                await self._report("analyze", f"Ошибка в {tc}: {str(e)}", pct)
 
         # Save crowd data after analysis
         self._save_crowd_data(results)
 
+        await self._report("complete", "Анализ завершён!", 100)
         return {
             "username": username,
             "platform": platform,
             "total_games": len(games),
             "time_controls": results,
-            "cache_stats": self.fide.get_cache_stats(),
         }
 
     # ── Process one time control ────────────────────────────────────
 
-    async def _process_time_control(self, tc: str, games: list, platform: str) -> dict:
+    async def _process_time_control(self, tc: str, games: list, platform: str, username: str) -> dict:
         fide_cat = TC_MAP.get(tc, "standard")
 
-        async with aiohttp.ClientSession() as session:
-            # Step 1: Titled anchors
+        async with _make_session() as session:
+            # Step 1: Titled anchors — use Lichess profile FIDE (or Chess.com profile FIDE)
             titled = await self._find_titled_anchors(games, fide_cat, session)
             await self._report("anchors", f"Найдено {len(titled)} титулованных якорей в {tc}", 60)
 
             all_anchors = list(titled)
 
-            # Step 1b: Profile FIDE anchors (Lichess users with FIDE in profile)
+            # Step 1b: User's own FIDE from profile (Lichess)
+            user_fide = await self._find_user_own_fide(platform, username, games, fide_cat, session)
+            if user_fide:
+                await self._report("anchors", f"Твой FIDE из профиля: {user_fide}", 62)
+                all_anchors.append(user_fide)
+
+            # Step 1c: Profile FIDE anchors (opponents with FIDE in Lichess profile)
             profile = await self._find_profile_fide_anchors(games, fide_cat, session)
             if profile:
                 await self._report("anchors", f"Плюс {len(profile)} якорей из профилей Lichess", 63)
                 all_anchors.extend(profile)
 
-            # Step 2: Non-titled FIDE anchors (any opponent with FIDE ID)
+            # Step 2: Non-titled FIDE anchors (any opponent with FIDE in profile)
             nontitled = await self._find_nontitled_anchors(games, fide_cat, session)
             all_anchors.extend(nontitled)
             if nontitled:
                 await self._report("anchors", f"Плюс {len(nontitled)} не-титулованных якорей с FIDE", 65)
 
-            # Step 3: If still nothing, chain search
+            # Step 3: Chain search
             if not all_anchors:
                 await self._report("chain", "Якорей нет. Ищу косвенные через последнего соперника...", 70)
                 indirect = await self._find_indirect_anchors(games, tc, platform, fide_cat, session)
                 all_anchors = indirect
                 if indirect:
                     await self._report("anchors", f"Найдено {len(indirect)} косвенных якорей", 75)
-                else:
-                    await self._report("anchors", "Якорей не найдено. Fallback: краудсорсинг...", 75)
 
-            # Step 4: Fallback — crowd offsets if still no anchors
+            # Step 4: Crowd offsets
             if not all_anchors:
+                await self._report("anchors", "Якорей не найдено. Fallback: краудсорсинг...", 75)
                 crowd = self._get_crowd_fallback(games, fide_cat)
                 if crowd is not None:
                     await self._report("anchors", f"Fallback: краудсорсинг (offset={crowd:+.0f})", 78)
-                    # Use the crowd offset for all games
                     fake_anchor = self._make_crowd_anchor(games, crowd, fide_cat)
                     all_anchors = [fake_anchor]
 
-        # Build daily chart
-        daily = self._build_daily_estimates(games, all_anchors)
+        # Step 5: Regression fallback — if still NO anchors, use pure regression
+        use_regression = False
+        if not all_anchors:
+            use_regression = True
+            await self._report("estimate", "Ничего не найдено. Использую регрессионную формулу...", 80)
+            # Build synthetic daily estimates via regression
+            daily = self._build_regression_daily(games, platform, tc, fide_cat)
+        else:
+            # Build daily chart from anchors
+            daily = self._build_daily_estimates(games, all_anchors)
+
         await self._report("estimate", f"Построение графика по {len(daily)} точкам...", 85)
 
         current = None
@@ -258,96 +268,180 @@ class Estimator:
             "indirect_anchors": len([a for a in all_anchors if not a.direct]),
             "nontitled_anchors": len([a for a in all_anchors if not a.is_titled]),
             "crowd_fallback": not all_anchors or (len(all_anchors) == 1 and not all_anchors[0].game_id),
+            "regression_fallback": use_regression,
             "total_anchors": len(all_anchors),
             "current_estimate": current,
             "anchors": [a.to_dict() for a in all_anchors],
             "daily_estimates": [d.to_dict() for d in daily],
         }
 
-    # ── Anchor search: titled opponents ─────────────────────────────
+    # ── NEW: User's own FIDE from profile (Lichess) ────────────────
+
+    async def _find_user_own_fide(self, platform: str, username: str, games: list,
+                                   fide_cat: str, session) -> Optional[Anchor]:
+        """Get user's own FIDE rating from their Lichess profile, if valid.
+        Only use if fide < 2000 and fide < user's platform rating (avoid inflation)."""
+        if platform != "lichess":
+            return None
+        try:
+            profile_fide = await _lich_profile_fide(session, username)
+        except Exception:
+            return None
+        if profile_fide is None:
+            return None
+
+        # Get user's current platform rating
+        last_rating = None
+        for g in reversed(games):
+            if g.user_rating:
+                last_rating = g.user_rating
+                break
+        if last_rating is None:
+            return None
+
+        # Anti-inflation: FIDE should be < 2000 and < platform rating
+        if profile_fide >= 2000:
+            return None
+        if profile_fide >= last_rating:
+            return None
+
+        # Create a synthetic anchor from this
+        class FakeGame:
+            pass
+        fake = FakeGame()
+        fake.game_id = None
+        fake.date = games[-1].date if games else datetime.now(tz=timezone.utc)
+        fake.time_class = games[0].time_class if games else fide_cat
+        fake.opponent = f"(свой FIDE: {profile_fide})"
+        fake.opponent_rating = 0
+        fake.opponent_title = ""
+        fake.user_accuracy = None
+        fake.opponent_accuracy = None
+        fake.platform = "lichess"
+
+        # The offset represents how much lower FIDE is than platform rating
+        offset = profile_fide - last_rating
+        a = Anchor.__new__(Anchor)
+        a.game_id = None
+        a.date = fake.date
+        a.time_class = fake.time_class
+        a.fide_category = fide_cat
+        a.opponent = f"(свой FIDE: {profile_fide})"
+        a.opponent_title = ""
+        a.platform_rating = last_rating
+        a.fide_rating = profile_fide
+        a.raw_offset = offset
+        a.adjusted_offset = offset
+        a.user_accuracy = None
+        a.opponent_accuracy = None
+        a.direct = True
+        a.is_titled = False
+        a.weight = 0.25  # lower confidence but still useful
+        return a
+
+    # ── Anchor search: titled opponents → Lichess profile FIDE ─────
 
     async def _find_titled_anchors(self, games: list, fide_cat: str,
-                                   session: aiohttp.ClientSession) -> list:
-        """Find titled opponents and look up their FIDE ratings."""
-        from fetchers import _lich_user_name, _cc_user_name
-
+                                   session) -> list:
+        """Find titled opponents and look up their FIDE ratings via Lichess profile."""
         anchors = []
         for game in games:
             title = game.opponent_title
             if not title or title not in FIDE_TITLES:
                 continue
 
+            fide_rating = None
+
             if game.platform == "lichess":
-                name = await _lich_user_name(session, game.opponent)
+                try:
+                    profile_fide = await _lich_profile_fide(session, game.opponent)
+                except Exception:
+                    profile_fide = None
+                fide_rating = profile_fide
+
             elif game.platform == "chesscom":
-                name = await _cc_user_name(session, game.opponent)
-            else:
+                try:
+                    profile_fide = await _cc_opponent_fide(session, game.opponent)
+                except Exception:
+                    profile_fide = None
+                fide_rating = profile_fide
+
+            if fide_rating is None:
+                # Try regression formula for this opponent
+                if game.opponent_rating:
+                    fide_rating = estimate_via_regression(
+                        game.platform, game.time_class, fide_cat, game.opponent_rating
+                    )
+                    if fide_rating:
+                        # Mark as indirect / low confidence
+                        a = Anchor(
+                            game=game, title=title,
+                            fide_rating=fide_rating,
+                            fide_category=fide_cat,
+                            direct=True, is_titled=True,
+                        )
+                        a.weight *= 0.3  # regression-based, lower confidence
+                        anchors.append(a)
                 continue
 
-            fide_info = await self.fide.search_player(name, title)
-            if fide_info and fide_info.get("found"):
-                fide_rating = self.fide.get_fide_rating(fide_info, fide_cat)
-                if fide_rating and fide_rating > 0:
-                    anchors.append(Anchor(
-                        game=game, title=title,
-                        fide_rating=fide_rating,
-                        fide_category=fide_cat,
-                        direct=True, is_titled=True,
-                    ))
+            anchors.append(Anchor(
+                game=game, title=title,
+                fide_rating=fide_rating,
+                fide_category=fide_cat,
+                direct=True, is_titled=True,
+            ))
+
         return anchors
 
-    # ── NEW: Anchor search — any opponent with FIDE ID ─────────────
+    # ── NEW: Any opponent with FIDE in profile ──────────────────────
 
     async def _find_nontitled_anchors(self, games: list, fide_cat: str,
-                                      session: aiohttp.ClientSession) -> list:
-        """Search ANY opponent (without a title) who has a FIDE rating."""
-        from fetchers import _lich_user_name, _cc_user_name
-
+                                      session) -> list:
+        """Search ANY opponent (without a title) who has FIDE in their profile."""
         anchors = []
         searched = set()
-
-        # Limit to first 15 unique opponents to avoid excessive FIDE API calls
         max_search = 15
         for game in games:
-            if game.opponent_title and game.opponent_title in FIDE_TITLES:
-                continue  # already handled by titled search
+            if game.opponent_title and game.opponent_title.upper() in FIDE_TITLES:
+                continue
             if not game.opponent or game.opponent in searched:
                 continue
             searched.add(game.opponent)
             if len(searched) > max_search:
                 break
 
+            fide_rating = None
             if game.platform == "lichess":
-                name = await _lich_user_name(session, game.opponent)
+                try:
+                    fide_rating = await _lich_profile_fide(session, game.opponent)
+                except Exception:
+                    continue
             elif game.platform == "chesscom":
-                name = await _cc_user_name(session, game.opponent)
-            else:
+                try:
+                    fide_rating = await _cc_opponent_fide(session, game.opponent)
+                except Exception:
+                    continue
+
+            if fide_rating is None:
                 continue
 
-            # Search without a title constraint
-            fide_info = await self.fide.search_player(name, "")
-            if fide_info and fide_info.get("found"):
-                fide_rating = self.fide.get_fide_rating(fide_info, fide_cat)
-                if fide_rating and fide_rating > 0:
-                    anchors.append(Anchor(
-                        game=game, title=fide_info.get("title", "") or "",
-                        fide_rating=fide_rating,
-                        fide_category=fide_cat,
-                        direct=True, is_titled=False,
-                    ))
-
+            anchors.append(Anchor(
+                game=game, title=game.opponent_title or "",
+                fide_rating=fide_rating,
+                fide_category=fide_cat,
+                direct=True, is_titled=False,
+            ))
         return anchors
 
-    # ── NEW: Profile FIDE anchors (Lichess users who set their FIDE in profile) ─
+    # ── Profile FIDE anchors (existing, more stringent checks) ──────
 
     async def _find_profile_fide_anchors(self, games: list, fide_cat: str,
-                                          session: aiohttp.ClientSession) -> list:
+                                          session) -> list:
         """Use FIDE ratings set by opponents on their Lichess profile (may be inflated).
         Only use if: fide < 2000 and fide < opponent's platform rating (not inflated)."""
-        from fetchers import _lich_profile_fide
-
         anchors = []
         checked = set()
+        limit = 10
 
         for game in games:
             if game.platform != "lichess":
@@ -355,20 +449,21 @@ class Estimator:
             if not game.opponent or game.opponent in checked:
                 continue
             checked.add(game.opponent)
-            if len(checked) > 15:
+            if len(checked) > limit:
                 break
 
-            profile_fide = await _lich_profile_fide(session, game.opponent)
+            try:
+                profile_fide = await _lich_profile_fide(session, game.opponent)
+            except Exception:
+                continue
             if profile_fide is None:
                 continue
 
-            # Reliability checks
             if profile_fide >= 2000:
                 continue
             if game.opponent_rating and profile_fide >= game.opponent_rating:
                 continue
 
-            # Use proper constructor but override weight
             a = Anchor(
                 game=game, title=game.opponent_title or "",
                 fide_rating=profile_fide,
@@ -376,8 +471,7 @@ class Estimator:
                 direct=True,
                 is_titled=bool(game.opponent_title and game.opponent_title.upper() in FIDE_TITLES),
             )
-            a.weight = 0.3  # profile FIDE is less reliable
-            a.adjusted_offset = a.raw_offset * (1.0 + (a._avg_accuracy() - 0.5) * 0.5)
+            a.weight = 0.3
             anchors.append(a)
 
         return anchors
@@ -385,7 +479,7 @@ class Estimator:
     # ── Chain search ────────────────────────────────────────────────
 
     async def _find_indirect_anchors(self, games: list, tc: str, platform: str,
-                                     fide_cat: str, session: aiohttp.ClientSession) -> list:
+                                     fide_cat: str, session) -> list:
         if not games:
             return []
 
@@ -398,12 +492,12 @@ class Estimator:
             if platform == "lichess":
                 opp_games = await asyncio.wait_for(
                     fetch_lichess_games(last_opponent, max_games=150),
-                    timeout=25.0
+                    timeout=30.0
                 )
             elif platform == "chesscom":
                 opp_games = await asyncio.wait_for(
                     fetch_chesscom_games(last_opponent, max_games=150),
-                    timeout=25.0
+                    timeout=30.0
                 )
                 await enrich_chesscom_titles(opp_games)
             else:
@@ -420,7 +514,6 @@ class Estimator:
 
             await self._report("chain", f"Поиск якорей в {len(opp_tc_games)} партиях {tc}...", 74)
 
-            # Search both titled and non-titled in opponent's games
             indirect = await self._find_titled_anchors(opp_tc_games, fide_cat, session)
             indirect += await self._find_nontitled_anchors(opp_tc_games, fide_cat, session)
 
@@ -428,18 +521,45 @@ class Estimator:
                 a.direct = False
                 a.weight = a._compute_weight() * 0.5
             return indirect
+
         except asyncio.TimeoutError:
             await self._report("chain", "Таймаут цепочки. Пропускаем.", 75)
             return []
         except Exception:
             return []
 
+    # ── Regression fallback builder ──────────────────────────────────
+
+    def _build_regression_daily(self, games: list, platform: str,
+                                 tc: str, fide_cat: str) -> list:
+        """Build daily estimates using pure regression formula."""
+        daily = []
+        for game in games:
+            if game.user_rating:
+                fide = estimate_via_regression(platform, tc, fide_cat, game.user_rating)
+                # Adjust by accuracy
+                if fide and game.user_accuracy:
+                    acc = game.user_accuracy / 100.0
+                    # High accuracy → slightly higher FIDE
+                    acc_mult = 1.0 + (acc - 0.5) * 0.3
+                    fide = int(round(fide * acc_mult))
+            else:
+                fide = None
+
+            daily.append(DailyEstimate(
+                date=game.date,
+                user_rating=game.user_rating,
+                fide=fide,
+                n_anchors=0,
+                total_w=0,
+                avg_off=0,
+            ))
+        return daily
+
     # ── Crowdsourcing ──────────────────────────────────────────────
 
     def _save_crowd_data(self, results: dict):
-        """Save offset data from this analysis for future fallback use."""
         crowd = _load_crowd()
-
         for tc_name, tc_data in results.items():
             if "error" in tc_data:
                 continue
@@ -455,17 +575,13 @@ class Estimator:
                     "weight": a["weight"],
                     "is_titled": a["is_titled"],
                 })
-                # Keep last 50 entries per bracket
                 crowd[key] = crowd[key][-50:]
-
         _save_crowd(crowd)
 
     def _get_crowd_fallback(self, games: list, fide_cat: str) -> Optional[float]:
-        """Get crowd-sourced average offset for this user's rating bracket."""
         if not games:
             return None
 
-        # Use the user's last known rating
         last_rating = None
         for g in reversed(games):
             if g.user_rating:
@@ -481,7 +597,6 @@ class Estimator:
 
         entries = crowd.get(key, [])
         if not entries:
-            # Try adjacent brackets
             low = (last_rating // 100) * 100
             for adj in [low - 100, low + 100, low - 200, low + 200]:
                 adj_key = f"{tc_name}:{adj}-{adj+99}"
@@ -499,7 +614,6 @@ class Estimator:
         return avg
 
     def _make_crowd_anchor(self, games: list, offset: float, fide_cat: str) -> Anchor:
-        """Create a fake anchor from crowd offset for estimation purposes."""
         class FakeGame:
             pass
         fake = FakeGame()
@@ -513,7 +627,6 @@ class Estimator:
         fake.opponent_accuracy = None
         fake.platform = "crowd"
 
-        # Create a minimal anchor with the crowd offset
         a = Anchor.__new__(Anchor)
         a.game_id = None
         a.date = fake.date
@@ -529,7 +642,7 @@ class Estimator:
         a.opponent_accuracy = None
         a.direct = False
         a.is_titled = False
-        a.weight = 0.3  # Lower confidence for crowd
+        a.weight = 0.3
         return a
 
     # ── Daily chart builder ────────────────────────────────────────
@@ -556,7 +669,6 @@ class Estimator:
             if cumulative and game.user_rating is not None:
                 total_w = sum(a.weight for a in cumulative)
                 if total_w > 0:
-                    # Weighted median (more robust than weighted avg)
                     sorted_by_offset = sorted(cumulative, key=lambda a: a.adjusted_offset)
                     cum_w = 0
                     median_offset = 0
