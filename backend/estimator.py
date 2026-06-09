@@ -298,12 +298,16 @@ class Estimator:
         anchors = []
         searched = set()
 
+        # Limit to first 15 unique opponents to avoid excessive FIDE API calls
+        max_search = 15
         for game in games:
             if game.opponent_title and game.opponent_title in FIDE_TITLES:
                 continue  # already handled by titled search
             if not game.opponent or game.opponent in searched:
                 continue
             searched.add(game.opponent)
+            if len(searched) > max_search:
+                break
 
             if game.platform == "lichess":
                 name = await _lich_user_name(session, game.opponent)
@@ -336,16 +340,33 @@ class Estimator:
         last_game = games[-1]
         last_opponent = last_game.opponent
 
+        await self._report("chain", f"Загрузка последних партий {last_opponent}...", 71)
+
         try:
             if platform == "lichess":
-                opp_games = await fetch_lichess_games(last_opponent)
+                opp_games = await asyncio.wait_for(
+                    fetch_lichess_games(last_opponent, max_games=150),
+                    timeout=25.0
+                )
             elif platform == "chesscom":
-                opp_games = await fetch_chesscom_games(last_opponent)
+                opp_games = await asyncio.wait_for(
+                    fetch_chesscom_games(last_opponent, max_games=150),
+                    timeout=25.0
+                )
                 await enrich_chesscom_titles(opp_games)
             else:
                 return []
 
+            if not opp_games:
+                return []
+
+            await self._report("chain", f"Загружено {len(opp_games)} партий {last_opponent}", 73)
+
             opp_tc_games = [g for g in opp_games if g.time_class == tc]
+            if not opp_tc_games:
+                return []
+
+            await self._report("chain", f"Поиск якорей в {len(opp_tc_games)} партиях {tc}...", 74)
 
             # Search both titled and non-titled in opponent's games
             indirect = await self._find_titled_anchors(opp_tc_games, fide_cat, session)
@@ -355,6 +376,9 @@ class Estimator:
                 a.direct = False
                 a.weight = a._compute_weight() * 0.5
             return indirect
+        except asyncio.TimeoutError:
+            await self._report("chain", "Таймаут цепочки. Пропускаем.", 75)
+            return []
         except Exception:
             return []
 

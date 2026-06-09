@@ -77,18 +77,19 @@ async def _lich_user_name(session, username: str) -> str:
     return data.get("username", username)
 
 
-async def fetch_lichess_games(username: str) -> list[GameRecord]:
+async def fetch_lichess_games(username: str, max_games: int = 500) -> list[GameRecord]:
     """Fetch ALL games for a user from Lichess."""
     games: list[GameRecord] = []
     user_color_map = {}  # cache: opponent -> user's color in the game
 
     async with aiohttp.ClientSession() as session:
         params = {
-            "max": 500,
+            "max": max_games if max_games else 500,
             "accuracy": "true",
             "opening": "false",
             "evals": "false",
             "moves": "false",
+            "sort": "dateDesc",
         }
 
         async for raw in _lich_stream(session, LICHESS_GAMES_URL.format(username=username), params):
@@ -183,7 +184,7 @@ async def _cc_user_name(session, username: str) -> str:
     return data.get("name", username)
 
 
-async def fetch_chesscom_games(username: str) -> list[GameRecord]:
+async def fetch_chesscom_games(username: str, max_games: int = 500) -> list[GameRecord]:
     """Fetch ALL games for a user from Chess.com (month by month)."""
     games: list[GameRecord] = []
 
@@ -195,13 +196,21 @@ async def fetch_chesscom_games(username: str) -> list[GameRecord]:
                 return games
             archives = (await resp.json()).get("archives", [])
 
-        # Fetch all archives
+        # Only fetch recent months if max_games is set
+        if max_games and max_games < 500:
+            archives = archives[-3:]  # last 3 months
+
+        # Fetch archives (stop early if we have enough)
         for url in archives:
+            if max_games and len(games) >= max_games:
+                break
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
                 if resp.status != 200:
                     continue
                 data = await resp.json()
                 for raw in data.get("games", []):
+                    if max_games and len(games) >= max_games:
+                        break
                     try:
                         rec = _parse_chesscom_game(raw, username)
                         if rec:
