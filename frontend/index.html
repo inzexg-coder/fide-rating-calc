@@ -14,7 +14,6 @@ body {
   min-height: 100vh;
 }
 .container { max-width: 960px; margin: 0 auto; padding: 40px 20px; }
-
 /* ── Header ── */
 .header { text-align: center; margin-bottom: 36px; }
 .header h1 {
@@ -23,7 +22,6 @@ body {
 }
 .header h1 span { color: #a78bfa; }
 .header .subtitle { color: #555; font-size: 13px; }
-
 /* ── Input row ── */
 .input-row {
   display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
@@ -51,7 +49,6 @@ input[type="text"]:focus { border-color: #7c3aed; }
 }
 .btn-go:disabled { opacity: .4; cursor: not-allowed; }
 .btn-go:hover:not(:disabled) { opacity: .9; }
-
 /* ── Progress ── */
 .progress-section { display: none; margin-bottom: 28px; }
 .progress-section.active { display: block; }
@@ -65,21 +62,17 @@ input[type="text"]:focus { border-color: #7c3aed; }
 .progress-status { display: flex; justify-content: space-between; margin-top: 8px; font-size: 13px; }
 .progress-msg { color: #888; }
 .progress-pct { color: #555; font-weight: 600; }
-
 /* ── Error ── */
 .error { display: none; padding: 14px 18px; background: #1f0f0f; border: 1px solid #7f1d1d; border-radius: 10px; color: #fca5a5; margin-bottom: 24px; font-size: 14px; }
 .error.active { display: block; }
-
 /* ── Results ── */
 .results { display: none; }
 .results.active { display: block; }
-
 .results-header {
   text-align: center; margin-bottom: 28px;
 }
 .results-header .username { font-size: 22px; font-weight: 700; color: #fff; }
 .results-header .stats { font-size: 13px; color: #555; margin-top: 4px; }
-
 /* ── TC Cards ── */
 .tc-grid {
   display: grid;
@@ -101,7 +94,6 @@ input[type="text"]:focus { border-color: #7c3aed; }
   font-size: 13px; color: #555; margin-top: 2px;
 }
 .tc-card .fide-max b { color: #888; }
-.tc-card 
 .tc-card .meta { font-size: 11px; color: #444; margin-top: 6px; }
 .tc-card .meta span { display: inline-block; margin: 0 4px; }
 .tc-card .badge {
@@ -110,7 +102,6 @@ input[type="text"]:focus { border-color: #7c3aed; }
 }
 .badge-anchors { background: #1a1a2e; color: #818cf8; }
 .badge-accuracy { background: #1a2a1a; color: #6ee7b7; }
-
 /* ── Chart ── */
 .chart-section { margin-bottom: 28px; }
 .chart-section .chart-header {
@@ -125,7 +116,6 @@ input[type="text"]:focus { border-color: #7c3aed; }
 .tc-tab.active { border-color: #7c3aed; color: #c4b5fd; background: #1f1530; }
 .tc-tab:hover { border-color: #4a4a5a; }
 .chart-wrap { position: relative; height: 350px; background: #12121a; border: 1px solid #1e1e2a; border-radius: 12px; padding: 16px; }
-
 /* ── Anchors table ── */
 .anchors-section { margin-top: 24px; }
 .anchors-section h3 { font-size: 14px; color: #888; margin-bottom: 12px; font-weight: 500; }
@@ -140,7 +130,6 @@ td { padding: 7px 6px; border-bottom: 1px solid #12121a; color: #999; }
 tr:hover td { background: #12121a; }
 .fide-col { color: #a78bfa; font-weight: 600; }
 .offset-col { color: #818cf8; }
-
 @media (max-width: 640px) {
   .container { padding: 20px 12px; }
   .header h1 { font-size: 22px; }
@@ -157,14 +146,12 @@ tr:hover td { background: #12121a; }
     <h1><span>FIDE</span> Rating Estimator</h1>
     <p class="subtitle">Оценка FIDE рейтинга по партиям с Lichess и Chess.com</p>
   </div>
-
   <div class="input-row">
     <button class="platform-btn active" data-platform="lichess">Lichess</button>
     <button class="platform-btn" data-platform="chesscom">Chess.com</button>
     <input type="text" id="usernameInput" placeholder="Никнейм..." value="Torii35">
     <button class="btn-go" id="goBtn">Анализировать</button>
   </div>
-
   <div class="progress-section" id="progressSection">
     <div class="progress-bar-bg">
       <div class="progress-bar" id="progressBar"></div>
@@ -174,17 +161,13 @@ tr:hover td { background: #12121a; }
       <span class="progress-pct" id="progressPct">0%</span>
     </div>
   </div>
-
   <div class="error" id="errorMsg"></div>
-
   <div class="results" id="results">
     <div class="results-header">
       <div class="username" id="resultUsername"></div>
       <div class="stats" id="resultStats"></div>
     </div>
-
     <div class="tc-grid" id="tcGrid"></div>
-
     <div class="chart-section">
       <div class="chart-header">
         <div class="tc-tabs" id="tcTabs"></div>
@@ -193,7 +176,6 @@ tr:hover td { background: #12121a; }
         <canvas id="chart"></canvas>
       </div>
     </div>
-
     <div class="anchors-section" id="anchorsSection" style="display:none;">
       <h3>Якоря (титулованные соперники с FIDE рейтингом)</h3>
       <div class="anchors-table-wrap">
@@ -216,15 +198,12 @@ tr:hover td { background: #12121a; }
     </div>
   </div>
 </div>
-
 <script>
 const TC_NAMES = { blitz: 'Blitz', rapid: 'Rapid', classical: 'Classical' };
 const TC_ORDER = ['blitz', 'rapid', 'classical'];
-
 let platform = 'lichess';
 let chartInstance = null;
 let chartData = null;
-
 document.querySelectorAll('.platform-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.platform-btn').forEach(b => b.classList.remove('active'));
@@ -232,57 +211,47 @@ document.querySelectorAll('.platform-btn').forEach(btn => {
     platform = btn.dataset.platform;
   });
 });
-
 document.getElementById('goBtn').addEventListener('click', startAnalysis);
 document.getElementById('usernameInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') startAnalysis();
 });
-
 function updateProgress(percent, message) {
   document.getElementById('progressBar').style.width = percent + '%';
   document.getElementById('progressMsg').textContent = message;
   document.getElementById('progressPct').textContent = percent + '%';
 }
-
 function showError(msg) {
   document.getElementById('errorMsg').textContent = msg;
   document.getElementById('errorMsg').classList.add('active');
   document.getElementById('progressSection').classList.remove('active');
   document.getElementById('goBtn').disabled = false;
 }
-
 // ── Lichess client-side fetch ──────────────────────────────────
-
 async function fetchLichessGames(username) {
   const TCS = ['blitz', 'rapid', 'classical'];
   const maxPerTC = 200;
   const allGames = [];
   let totalFetched = 0;
-
   for (let ti = 0; ti < TCS.length; ti++) {
     const tc = TCS[ti];
     const url = `https://lichess.org/api/games/user/${encodeURIComponent(username)}?perfType=${tc}&max=${maxPerTC}&accuracy=true&sort=dateDesc`;
     updateProgress(2 + ti * 3, 'Загрузка ' + tc + '...');
-
     const resp = await fetch(url, { headers: { 'Accept': 'application/x-ndjson' } });
     if (!resp.ok) {
       if (resp.status === 429) throw new Error('Лимит запросов Lichess. Попробуйте через минуту.');
       if (resp.status === 404) continue; // No games in this TC, try next
       continue;
     }
-
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
     let count = 0;
-
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop();
-
       for (const line of lines) {
         if (!line.trim()) continue;
         try {
@@ -296,14 +265,11 @@ async function fetchLichessGames(username) {
     totalFetched += count;
     updateProgress(10 + ti * 5, tc + ': загружено ' + count + ' партий (' + totalFetched + ' всего)');
   }
-
   if (allGames.length === 0) throw new Error('Не удалось загрузить партии.');
-
   allGames.sort((a, b) => new Date(a.date) - new Date(b.date));
   updateProgress(25, 'Загружено ' + allGames.length + ' партий');
   return allGames;
 }
-
 function parseLichessGame(raw, targetUser) {
   const speed = raw.speed;
   if (!['blitz','rapid','classical','correspondence'].includes(speed)) return null;
@@ -313,12 +279,10 @@ function parseLichessGame(raw, targetUser) {
   const wuser = (white.user || {}).name || '';
   const buser = (black.user || {}).name || '';
   const tl = targetUser.toLowerCase();
-
   let user, opp, userColor;
   if (wuser.toLowerCase() === tl) { user = white; opp = black; userColor = 'white'; }
   else if (buser.toLowerCase() === tl) { user = black; opp = white; userColor = 'black'; }
   else return null;
-
   const oppUser = opp.user || {};
   const opponent = oppUser.name || opp.name || '?';
   const oppTitle = (opp.title || oppUser.title || '').toUpperCase();
@@ -326,9 +290,7 @@ function parseLichessGame(raw, targetUser) {
   const date = ts ? new Date(ts).toISOString() : new Date().toISOString();
   const userAcc = (user.analysis || {}).accuracy || null;
   const oppAcc = (opp.analysis || {}).accuracy || null;
-
   const tc = speed === 'correspondence' ? 'classical' : speed;
-
   return {
     game_id: raw.id || '', date, speed, time_class: tc,
     user_rating: user.rating || null,
@@ -339,25 +301,19 @@ function parseLichessGame(raw, targetUser) {
     platform: 'lichess',
   };
 }
-
 // ── Chess.com client-side fetch ───────────────────────────────
-
 async function fetchChesscomGames(username) {
-  const games = [];
+  let games = [];
   updateProgress(2, 'Подключение к Chess.com...');
-
   const archResp = await fetch(`https://api.chess.com/pub/player/${encodeURIComponent(username)}/games/archives`);
   if (!archResp.ok) {
     if (archResp.status === 404) throw new Error('Пользователь не найден на Chess.com.');
     throw new Error('Ошибка Chess.com: ' + archResp.status);
   }
   const archives = (await archResp.json()).archives || [];
-
   if (archives.length === 0) throw new Error('Нет архивов партий.');
-
   const recentArchives = archives.slice(-12);
   updateProgress(5, 'Архивов найдено: ' + recentArchives.length);
-
   for (let ai = 0; ai < recentArchives.length; ai++) {
     const url = recentArchives[ai];
     updateProgress(5 + ai * 2, 'Загрузка архива ' + (ai + 1) + '/' + recentArchives.length + '...');
@@ -370,15 +326,11 @@ async function fetchChesscomGames(username) {
     }
     await new Promise(r => setTimeout(r, 150));
   }
-
   if (games.length === 0) throw new Error('Не удалось загрузить партии.');
-
   updateProgress(20, 'Загружено ' + games.length + ' партий. Проверка титулов...');
-
   const opponents = [...new Set(games.map(g => g.opponent).filter(o => o !== '?'))];
   const titleMap = {};
   let checked = 0;
-
   for (const opp of opponents) {
     if (checked >= 20) break;
     try {
@@ -393,32 +345,32 @@ async function fetchChesscomGames(username) {
     updateProgress(22 + Math.floor(checked / opponents.length * 8),
       'Проверка ' + checked + '/' + Math.min(opponents.length, 20) + ' соперников...');
   }
-
   for (const g of games) {
     if (titleMap[g.opponent]) g.opponent_title = titleMap[g.opponent];
   }
-
+  // Limit to 200 per time control
+  const tcLimit = {};
+  games = games.filter(g => {
+    tcLimit[g.time_class] = (tcLimit[g.time_class] || 0) + 1;
+    return tcLimit[g.time_class] <= 200;
+  });
   games.sort((a, b) => new Date(a.date) - new Date(b.date));
+  
   updateProgress(30, 'Загружено ' + games.length + ' партий');
   return games;
 }
-
 function parseChesscomGame(raw, targetUser) {
   const tc = raw.time_class;
   if (!['blitz','rapid','classical'].includes(tc)) return null;
-
   const tl = targetUser.toLowerCase();
   const white = raw.white || {};
   const black = raw.black || {};
-
   let user, opp, userColor;
   if ((white.username || '').toLowerCase() === tl) { user = white; opp = black; userColor = 'white'; }
   else if ((black.username || '').toLowerCase() === tl) { user = black; opp = white; userColor = 'black'; }
   else return null;
-
   const ts = raw.end_time || 0;
   const date = ts ? new Date(ts * 1000).toISOString() : new Date().toISOString();
-
   return {
     game_id: raw.uuid || '', date, speed: tc, time_class: tc === 'daily' ? 'classical' : tc,
     user_rating: user.rating || null,
@@ -431,20 +383,16 @@ function parseChesscomGame(raw, targetUser) {
     platform: 'chesscom',
   };
 }
-
 // ── Main analysis ─────────────────────────────────────────────
-
 async function startAnalysis() {
   const username = document.getElementById('usernameInput').value.trim();
   if (!username) return;
-
   document.getElementById('results').classList.remove('active');
   document.getElementById('errorMsg').classList.remove('active');
   document.getElementById('progressSection').classList.add('active');
   document.getElementById('goBtn').disabled = true;
   if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
   chartData = null;
-
   try {
     let games;
     if (platform === 'lichess') {
@@ -452,18 +400,29 @@ async function startAnalysis() {
     } else {
       games = await fetchChesscomGames(username);
     }
-
     if (games.length === 0) { showError('Не удалось загрузить партии.'); return; }
-
-    updateProgress(35, 'Отправка ' + games.length + ' партий на сервер...');
+    // Show total fetched but limit to 200 per time control when sending
+    const totalFetched = games.length;
+    const tcCounts = {};
+    const limitedGames = games.filter(g => {
+      tcCounts[g.time_class] = (tcCounts[g.time_class] || 0) + 1;
+      return tcCounts[g.time_class] <= 200;
+    });
+    updateProgress(35, 'Партий: ' + totalFetched + ', отправляю ' + limitedGames.length + ' (макс. 200 на контроль)...');
     const resp = await fetch('/api/estimate/games', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platform, username, games }),
+      body: JSON.stringify({ platform, username, games: limitedGames }),
     });
     if (!resp.ok) {
-      const err = await resp.json();
-      throw new Error(err.detail || 'Ошибка сервера');
+      const ct = resp.headers.get('content-type') || '';
+      if (ct.includes('application/json')) {
+        const err = await resp.json();
+        throw new Error(err.detail || 'Ошибка сервера');
+      } else {
+        const text = await resp.text();
+        throw new Error('Сервер вернул ошибку ' + resp.status + (text.length > 200 ? '' : ': ' + text));
+      }
     }
     updateProgress(70, 'Обработка...');
     const result = await resp.json();
@@ -475,46 +434,37 @@ async function startAnalysis() {
     document.getElementById('goBtn').disabled = false;
   }
 }
-
 // ── Results display ──────────────────────────────────────────
-
 function showResults(data) {
   chartData = data;
   document.getElementById('results').classList.add('active');
   document.getElementById('resultUsername').textContent = data.username;
-
   const tcs = Object.keys(data.time_controls).filter(tc => {
     const tcData = data.time_controls[tc];
-    return !tcData.error && tcData.current_fide != null && tcData.total_games >= 50;
+    return !tcData.error && tcData.current_fide != null && tcData.total_games >= 10;
   });
   tcs.sort((a, b) => TC_ORDER.indexOf(a) - TC_ORDER.indexOf(b));
-
   let statsText = data.total_games + ' партий, ' + tcs.length + ' контролей';
   if (data.average_accuracy != null) {
     statsText += ', ср. точность ' + data.average_accuracy + '%';
   }
   document.getElementById('resultStats').textContent = statsText;
-
   // TC cards
   const grid = document.getElementById('tcGrid');
   grid.innerHTML = '';
-
   tcs.forEach(tc => {
     const tcData = data.time_controls[tc];
     const card = document.createElement('div');
     card.className = 'tc-card';
-
     const fideCurrent = tcData.current_fide || '—';
     const fideMax = tcData.max_fide || '—';
     const platRating = tcData.user_platform_rating || '—';
-
     let badgeHtml = '<span class="badge badge-accuracy">по точности</span>';
     if (tcData.has_anchors && tcData.direct_anchors > 0) {
       badgeHtml = '<span class="badge badge-anchors">' + tcData.direct_anchors + ' ссылки</span>';
     } else if (tcData.has_anchors) {
       badgeHtml = '<span class="badge badge-anchors">' + tcData.total_anchors + ' ссылки</span>';
     }
-
     card.innerHTML =
       '<div class="tc-name">' + (TC_NAMES[tc] || tc) + '</div>' +
       '<div class="tc-cat">FIDE ' + tcData.fide_category + '</div>' +
@@ -524,12 +474,10 @@ function showResults(data) {
       '<div class="meta">' + badgeHtml + ' <span>' + tcData.total_games + ' игр</span></div>';
     grid.appendChild(card);
   });
-
   // Chart tabs
   const tabsContainer = document.getElementById('tcTabs');
   tabsContainer.innerHTML = '';
   let firstValidTc = null;
-
   tcs.forEach(tc => {
     const tcData = data.time_controls[tc];
     if (!tcData.daily_estimates || tcData.daily_estimates.length === 0) return;
@@ -545,35 +493,27 @@ function showResults(data) {
     });
     tabsContainer.appendChild(tab);
   });
-
   if (firstValidTc) renderChart(firstValidTc);
-
   // Anchors
   renderAnchors(data);
 }
-
 // ── Animated chart ────────────────────────────────────────────
-
 function renderChart(tc) {
   if (!chartData) return;
   const tcData = chartData.time_controls[tc];
   if (!tcData || !tcData.daily_estimates) return;
-
   const daily = tcData.daily_estimates;
   const labels = daily.map(d => {
     const dt = new Date(d.date);
     return dt.toLocaleDateString('ru', { day: 'numeric', month: 'short', year: '2-digit' });
   });
   const fideData = daily.map(d => d.estimated_fide);
-
   const ctx = document.getElementById('chart').getContext('2d');
   if (chartInstance) chartInstance.destroy();
-
   // Gradient fill
   const gradient = ctx.createLinearGradient(0, 0, 0, 350);
   gradient.addColorStop(0, 'rgba(167, 139, 250, 0.2)');
   gradient.addColorStop(1, 'rgba(167, 139, 250, 0.01)');
-
   chartInstance = new Chart(ctx, {
     type: 'line',
     data: {
@@ -629,21 +569,16 @@ function renderChart(tc) {
     }
   });
 }
-
 // ── Anchors table ─────────────────────────────────────────────
-
 function renderAnchors(data) {
   if (!data.anchors || data.anchors.length === 0) return;
-
   const tbody = document.getElementById('anchorsBody');
   tbody.innerHTML = '';
-
   data.anchors.forEach(anchor => {
     const row = document.createElement('tr');
     const date = new Date(anchor.date).toLocaleDateString('ru');
     const rating = anchor.fide_rating?.toString().padStart(4, ' ');
     const offset = anchor.adjusted_offset?.toFixed(1);
-
     row.innerHTML =
       `<td>${date}</td>
        <td>${anchor.opponent}</td>
@@ -652,10 +587,8 @@ function renderAnchors(data) {
        <td class="fide-col">${rating || '—'}</td>
        <td class="fide-col">${offset || '—'}</td>
        <td>${anchor.direct ? 'Прямая' : 'Косвенная'}</td>`;
-
     tbody.appendChild(row);
   });
-
   document.getElementById('anchorsSection').style.display = 'block';
 }
 </script>

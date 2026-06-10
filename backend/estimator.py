@@ -170,7 +170,7 @@ class Estimator:
             pct = 15 + int(60 * (idx + 1) / len(tc_list))
             await self._report("analyze", f"[{idx+1}/{len(tc_list)}] {tc} ({len(tc_games)} партий)...", pct)
             try:
-                result = await self._process_time_control(tc, tc_games, platform, username)
+                result = await self._process_time_control(tc, tc_games, platform, username, skip_online=True)
                 results[tc] = result
             except Exception as e:
                 results[tc] = {"error": str(e)}
@@ -233,7 +233,7 @@ class Estimator:
             pct = 15 + int(65 * (idx + 1) / len(tc_list))
             await self._report("analyze", f"[{idx+1}/{len(tc_list)}] {tc} ({len(tc_games)} партий)...", pct)
             try:
-                result = await self._process_time_control(tc, tc_games, platform, username)
+                result = await self._process_time_control(tc, tc_games, platform, username, skip_online=True)
                 results[tc] = result
             except Exception as e:
                 results[tc] = {"error": str(e)}
@@ -266,14 +266,18 @@ class Estimator:
 
     # ── Process one time control ────────────────────────────────────
 
-    async def _process_time_control(self, tc: str, games: list, platform: str, username: str) -> dict:
+    async def _process_time_control(self, tc: str, games: list, platform: str, username: str, skip_online: bool = False) -> dict:
         fide_cat = TC_MAP.get(tc, "standard")
 
         async with _make_session() as session:
-            # Check Lichess reachability
-            lichess_ok = await check_lichess_reachable(session)
-            if not lichess_ok:
-                await self._report("fetch", "⚠ Lichess API недоступен с сервера. Используются только регрессионные формулы.", 55)
+            # Check Lichess reachability (skip if client provided games - Lichess is unreachable from server)
+            if skip_online:
+                lichess_ok = False
+                await self._report("fetch", "⚠ Lichess API недоступен (режим оффлайн). Используются только переданные данные.", 55)
+            else:
+                lichess_ok = await check_lichess_reachable(session)
+                if not lichess_ok:
+                    await self._report("fetch", "⚠ Lichess API недоступен с сервера. Используются только регрессионные формулы.", 55)
 
             # Step 1: Titled Anchors — use Lichess profile FIDE (or Chess.com profile FIDE)
             titled = await self._find_titled_references(games, fide_cat, session, lichess_ok)
@@ -633,7 +637,9 @@ class Estimator:
         """Build daily estimates using accuracy-adjusted formula.
         High accuracy → FIDE closer to platform rating.
         Low accuracy → FIDE lower.
-        Uses last 200 games accuracy stats."""
+        Groups games by date, using the last game's rating per day."""
+        from collections import defaultdict
+
         # Pre‑compute overall accuracy stats for this TC
         all_accs = [g.user_accuracy for g in games if g.user_accuracy is not None]
         avg_acc = sum(all_accs) / len(all_accs) / 100.0 if all_accs else 0.5
@@ -642,28 +648,48 @@ class Estimator:
         all_ratings = [g.user_rating for g in games if g.user_rating is not None]
         avg_rating = sum(all_ratings) / len(all_ratings) if all_ratings else 1200
 
-        daily = []
-        for game in games:
-            # Use actual rating if available, otherwise use average for this TC
-            game_rating = game.user_rating if game.user_rating else avg_rating
+        # Group games by date
+        daily_map = defaultdict(list)
+        for g in games:
+            date_key = g.date.date() if hasattr(g.date, 'date') else str(g.date)[:10]
+            daily_map[date_key].append(g)
 
-            fide = estimate_via_regression(platform, tc, fide_cat, game_rating)
-            if fide:
-                # Accuracy adjustment: higher acc → higher FIDE
-                # acc 0.5 → 1.0x,  acc 1.0 → 1.12x,  acc 0.0 → 0.85x
-                acc = (game.user_accuracy / 100.0) if game.user_accuracy is not None else avg_acc
-                mult = 0.85 + acc * 0.3  # 0.85 - 1.15 range
-                fide = max(int(round(fide * mult)), 100)
-            else:
-                fide = None
+        daily = []
+        sorted_dates = sorted(daily_map.keys())
+
+        # Accumulate offset from regression across all games up to each date
+        cumulative_offset = 0.0
+        for date_key in sorted_dates:
+            day_games = daily_map[date_key]
+            # Use the last game's rating for this day
+            last_game = day_games[-1]
+            game_rating = last_game.user_rating if last_game.user_rating else avg_rating
+
+            # Compute offset for each game on this day and average them
+            offsets = []
+            for g in day_games:
+                gr = g.user_rating if g.user_rating else avg_rating
+                fide = estimate_via_regression(platform, tc, fide_cat, gr)
+                if fide:
+                    acc = (g.user_accuracy / 100.0) if g.user_accuracy is not None else avg_acc
+                    mult = 0.85 + acc * 0.3
+                    fide_adj = max(int(round(fide * mult)), 100)
+                    offsets.append(fide_adj - gr)
+                else:
+                    offsets.append(0)
+
+            avg_offset = sum(offsets) / len(offsets)
+            cumulative_offset = avg_offset  # use current day's offset
+
+            estimated = game_rating + cumulative_offset if game_rating else None
 
             daily.append(DailyEstimate(
-                date=game.date,
-                user_rating=game.user_rating,
-                fide=fide,
+                date=last_game.date,
+                user_rating=game_rating,
+                fide=int(round(estimated)) if estimated is not None else None,
                 n_anchors=0,
                 total_w=0,
-                avg_off=0,
+                avg_off=round(cumulative_offset, 2),
             ))
         return daily
 
@@ -762,22 +788,45 @@ class Estimator:
         if not games:
             return []
 
-        Anchors_sorted = sorted(Anchor, key=lambda a: a.date if a.date else datetime.min.replace(tzinfo=timezone.utc))
+        from collections import defaultdict
+
+        # Sort anchors by date
+        anchors_sorted = sorted(Anchors, key=lambda a: a.date if a.date else datetime.min.replace(tzinfo=timezone.utc))
+
+        # Group games by date (YYYY-MM-DD)
+        games_by_date = defaultdict(list)
+        for g in games:
+            date_key = g.date.date() if hasattr(g.date, 'date') else str(g.date)[:10]
+            games_by_date[date_key].append(g)
+
+        sorted_dates = sorted(games_by_date.keys())
         estimates = []
         cumulative = []
         idx = 0
+        anchor_idx = 0
 
-        for game in games:
-            while idx < len(anchors_sorted):
-                a = Anchors_sorted[idx]
+        for date_key in sorted_dates:
+            day_games = games_by_date[date_key]
+            # Use last game of the day for user_rating
+            last_game = day_games[-1]
+
+            # Add any anchors that occurred on or before this date
+            while anchor_idx < len(anchors_sorted):
+                a = anchors_sorted[anchor_idx]
                 anchor_date = a.date if a.date else datetime.min.replace(tzinfo=timezone.utc)
-                if anchor_date <= game.date:
+                # Compare dates only (ignore time)
+                game_date = last_game.date.date() if hasattr(last_game.date, 'date') else str(last_game.date)[:10]
+                if hasattr(anchor_date, 'date'):
+                    anchor_date_only = anchor_date.date()
+                else:
+                    anchor_date_only = str(anchor_date)[:10]
+                if anchor_date_only <= game_date:
                     cumulative.append(a)
-                    idx += 1
+                    anchor_idx += 1
                 else:
                     break
 
-            if cumulative and game.user_rating is not None:
+            if cumulative and last_game.user_rating is not None:
                 total_w = sum(a.weight for a in cumulative)
                 if total_w > 0:
                     sorted_by_offset = sorted(cumulative, key=lambda a: a.adjusted_offset)
@@ -789,7 +838,7 @@ class Estimator:
                         if cum_w >= target:
                             median_offset = a.adjusted_offset
                             break
-                    estimated = game.user_rating + median_offset
+                    estimated = last_game.user_rating + median_offset
                 else:
                     median_offset = 0
                     estimated = None
@@ -799,8 +848,8 @@ class Estimator:
                 estimated = None
 
             estimates.append(DailyEstimate(
-                date=game.date,
-                user_rating=game.user_rating,
+                date=last_game.date,
+                user_rating=last_game.user_rating,
                 fide=int(round(estimated)) if estimated is not None else None,
                 n_anchors=len(cumulative),
                 total_w=total_w,
