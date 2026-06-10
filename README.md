@@ -388,7 +388,4 @@ fide-rating-calc/
   <br>
   <a href="https://github.com/inzexg-coder">@inzexg-coder</a>
   <br>
-  <img src=".ameni/assets/skill-tg.svg" width="20" title="TG Parser">
-  <img src=".ameni/assets/skill-vs.svg" width="20" title="VS Kernel">
-  <img src=".ameni/assets/skill-fide.svg" width="20" title="FIDE Calc">
 </p>

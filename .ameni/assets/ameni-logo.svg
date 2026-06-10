@@ -1,17 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
   <defs>
-    <linearGradient id="fg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#a78bfa"/>
-      <stop offset="100%" stop-color="#6366f1"/>
-    </linearGradient>
-    <linearGradient id="bg" x1="0" y1="1" x2="1" y2="0">
-      <stop offset="0%" stop-color="#0a0a0f"/>
-      <stop offset="100%" stop-color="#1a1a2e"/>
+    <linearGradient id="fide" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#1d4ed8"/>
     </linearGradient>
   </defs>
-  <circle cx="50" cy="50" r="45" stroke="url(#fg)" stroke-width="3" fill="url(#bg)"/>
-  <path d="M38 68 L45 68 L45 58 L38 58 Z" fill="url(#fg)" opacity="0.8"/>
-  <path d="M55 68 L62 68 L62 58 L55 58 Z" fill="url(#fg)" opacity="0.8"/>
-  <path d="M38 55 L62 55" stroke="url(#fg)" stroke-width="4" stroke-linecap="round"/>
-  <path d="M42 48 C42 40 50 32 50 32 C50 32 58 40 58 48" stroke="url(#fg)" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <circle cx="50" cy="50" r="45" stroke="url(#fide)" stroke-width="3" fill="#0a0a0f"/>
+  <text x="50" y="62" text-anchor="middle" font-family="system-ui,sans-serif" font-size="38" font-weight="800" fill="url(#fide)">F</text>
 </svg>
