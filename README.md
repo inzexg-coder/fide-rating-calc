@@ -17,43 +17,39 @@
 </p>
 
 <p align="center">
-  <a href="#алгоритм-оценки">Алгоритм оценки</a> &middot;
+  <a href="#алгоритм-оценки">Алгоритм</a> &middot;
   <a href="#anchor-метод">Anchor-метод</a> &middot;
-  <a href="#регрессионная-модель">Регрессионная модель</a> &middot;
+  <a href="#регрессионная-модель">Регрессия</a> &middot;
   <a href="#краудсорсинг">Краудсорсинг</a> &middot;
-  <a href="#cli-агент">CLI-агент</a> &middot;
+  <a href="#cli-агент">CLI</a> &middot;
   <a href="#api">API</a> &middot;
-  <a href="#архитектура">Архитектура</a>
+  <a href="#связанные-скиллы">Скиллы</a>
 </p>
 
 ---
 
 ## Алгоритм оценки
 
-Оценка FIDE-рейтинга основана на **трёхуровневой архитектуре**: при наличии достаточного количества титулованных соперников с известным FIDE-рейтингом используется прямой Anchor-метод; при их недостатке — регрессионная аппроксимация на основе верифицированных данных курсовой работы; в отсутствие обоих — краудсорсинговое усреднение смещений других пользователей в том же рейтинговом диапазоне.
+Оценка FIDE-рейтинга основана на трёхуровневой архитектуре:
+
+1. **Anchor-метод** — при наличии титулованных соперников с известным FIDE-рейтингом
+2. **Регрессионная аппроксимация** — при их недостатке (на основе верифицированных данных)
+3. **Краудсорсинг** — усреднение смещений других пользователей в том же рейтинговом диапазоне
 
 ```
-                        ┌─────────────────────────┐
-                        │  Загрузка партий         │
-                        │  (Lichess / Chess.com)   │
-                        │  до 200 на каждый ТК     │
-                        └───────────┬─────────────┘
-                                    ▼
-                     ┌───────────────────────────┐
-                     │  Поиск титулованных        │
-                     │  соперников (GM,IM,FM,CM)  │
-                     │  с известным FIDE-рейтингом│
-                     └──────┬────────────┬───────┘
-                            ▼            ▼
-              ┌─────────────────┐  ┌─────────────────┐
-              │ ≥2 Anchor'ов   │  │ <2 Anchor'ов    │
-              │ Anchor-метод   │  │ Регрессия       │
-              └────────┬───────┘  └────────┬────────┘
-                       ▼                   ▼
-              ┌─────────────────────────────────────┐
-              │  Финальная оценка FIDE-рейтинга      │
-              │  с weighting и confidence interval   │
-              └─────────────────────────────────────┘
+Партии пользователя
+       |
+       v
+Поиск титулованных соперников (GM, IM, FM, CM)
+       |
+       +---> достаточно anchor'ов (>=2) --> Anchor-метод
+       |
+       +---> мало anchor'ов -----------> Регрессионная модель
+       |
+       +---> нет данных ---------------> Краудсорсинг
+       |
+       v
+Финальная оценка FIDE-рейтинга
 ```
 
 ---
@@ -62,98 +58,92 @@
 
 ### Теоретическая основа
 
-Anchor-метод базируется на предположении, что разница (offset) между рейтингом игрока на платформе (Lichess/Chess.com) и его официальным рейтингом FIDE является систематической величиной для данной платформы и временного контроля. Титулованные игроки (GM, IM, FM, CM) имеют верифицированный рейтинг FIDE, доступный через API платформ, что позволяет вычислить этот offset.
+Разница (offset) между рейтингом на платформе (Lichess/Chess.com) и официальным рейтингом FIDE является систематической величиной для данной платформы и временного контроля. Титулованные игроки имеют верифицированный рейтинг FIDE, что позволяет вычислить этот offset.
 
-Для пользователя `u` оценка FIDE-рейтинга производится по формуле:
+### Формула оценки
 
-$$FIDE_u = R_u + \frac{\sum_{i=1}^{n} w_i \cdot \delta_i}{\sum_{i=1}^{n} w_i}$$
+```
+FIDE(user) = R(user) + weighted_median(delta_1, ..., delta_n)
+```
 
 где:
-- $R_u$ — средневзвешенный рейтинг пользователя на платформе
-- $\delta_i$ — скорректированное смещение $i$-го Anchor'а
-- $w_i$ — вес $i$-го Anchor'а
-- $n$ — количество Anchor'ов
+- `R(user)` — средневзвешенный рейтинг пользователя на платформе
+- `delta_i` — скорректированное смещение i-го Anchor'а
+- `weighted_median` — взвешенная медиана (устойчива к выбросам)
 
 ### Вычисление смещения (Raw Offset)
 
-Для каждого титулованного соперника $i$ с известным FIDE-рейтингом $F_i$ и рейтингом на платформе $P_i$ вычисляется сырое смещение:
+```
+delta_raw = FIDE(opponent) - Rating(opponent)
+```
 
-$$\delta_{raw,i} = F_i - P_i$$
-
-Положительное смещение означает, что FIDE-рейтинг соперника выше его платформенного (игрок сильнее в официальных турнирах). Отрицательное — рейтинг на платформе выше FIDE (игрок сильнее онлайн).
+- `delta > 0` — FIDE-рейтинг соперника выше платформенного (сильнее в офлайн-турнирах)
+- `delta < 0` — платформенный рейтинг выше FIDE (сильнее онлайн)
 
 ### Коррекция смещения (Adjusted Offset)
 
-Сырое смещение корректируется с учётом качества партии, определяемого через accuracy (точность) обоих игроков:
+Сырое смещение корректируется с учётом accuracy (точности) обоих игроков:
 
-$$\delta_i = \delta_{raw,i} \cdot \left(1 + \frac{a_{avg} - 0.5}{2}\right)$$
+```
+delta = delta_raw * (1 + (avg_accuracy - 0.5) / 2)
+```
 
-где $a_{avg}$ — нормированная средняя точность партии:
+Средняя точность `avg_accuracy` нормируется:
+- Если известны accuracy обоих: `(acc_user + acc_opponent) / 200`
+- Если только пользователя: `acc_user / 100`
+- Если только соперника: `acc_opponent / 100`
+- Если accuracy недоступен: `0.5`
 
-$$a_{avg} = \begin{cases}
-\frac{acc_u + acc_o}{200}, & \text{если известны оба показателя} \\[6pt]
-\frac{acc_u}{100}, & \text{если известен только accuracy пользователя} \\[6pt]
-\frac{acc_o}{100}, & \text{если известен только accuracy соперника} \\[6pt]
-0.5, & \text{если accuracy недоступен}
-\end{cases}$$
-
-**Обоснование**: при высокой точности (близкой к 100%) партия считается более показательной — оба игрока играли в свою силу, и смещение более репрезентативно. Коэффициент коррекции варьируется от 1.0 (при $a_{avg}=0.5$) до 1.25 (при $a_{avg}=1.0$).
+**Обоснование**: при высокой точности партия более показательна — оба играли в свою силу. Коэффициент коррекции: от 1.0 (avg=0.5) до 1.25 (avg=1.0).
 
 ### Расчёт весов (Weighting)
 
-Вес каждого Anchor'а $w_i$ вычисляется как произведение трёх факторов:
+Вес каждого Anchor'а вычисляется как произведение трёх факторов:
 
-$$w_i = w_{acc} \cdot w_{direct} \cdot w_{title}$$
+| Фактор | Значение | Диапазон | Пояснение |
+|--------|----------|----------|-----------|
+| accuracy | `max(avg_accuracy, 0.1)` | 0.1–1.0 | Чем выше точность, тем весомее Anchor |
+| direct | 1.0 (прямой) / 0.5 (косвенный) | 0.5–1.0 | Прямой: FIDE из профиля соперника |
+| titled | 1.0 (титул) / 0.5 (нет титула) | 0.5–1.0 | Титулованный соперник vs нетитулованный |
 
-| Фактор | Формула | Диапазон | Описание |
-|--------|---------|----------|----------|
-| $w_{acc}$ | $\max(a_{avg}, 0.1)$ | [0.1, 1.0] | Точность: чем выше, тем весомее Anchor |
-| $w_{direct}$ | $\begin{cases}1.0, & \text{pryamoi}\\0.5, & \text{tsepevoi}\end{cases}$ | {0.5, 1.0} | Прямой Anchor (FIDE из профиля) vs косвенный |
-| $w_{title}$ | $\begin{cases}1.0, & \text{yesli yest titul}\\0.5, & \text{yesli net titula}\end{cases}$ | {0.5, 1.0} | Титулованный соперник vs нетитулованный, но с FIDE |
+Итоговый вес: `w = w_acc * w_direct * w_title`, ограничение `w >= 0.01`.
 
-Итоговый вес $w_i \geq 0.01$ (ограничение снизу для численной устойчивости).
+### Взвешенная медиана
 
-### Усреднение через медиану
+Финальное смещение — не среднее, а **взвешенная медиана**:
 
-Финальное смещение вычисляется не как среднее арифметическое, а как **взвешенная медиана**:
+1. Anchor'ы сортируются по `delta`
+2. Вычисляется общий вес `W = sum(w)`
+3. Anchor'ы перебираются, накапливая вес, пока `cum_weight >= W/2`
+4. `delta` на этом Anchor'е — финальное смещение
 
-$$\delta_{final} = \text{mediana}\left(\{\delta_1, \delta_2, ..., \delta_n\}, \{w_1, w_2, ..., w_n\}\right)$$
-
-Процедура:
-1. Anchor'ы сортируются по $\delta_i$
-2. Вычисляется совокупный вес $W = \sum w_i$
-3. Anchor'ы перебираются в порядке сортировки, накапливая вес, пока $cum\_weight \geq W/2$
-4. Значение $\delta$ на этом Anchor'е является взвешенной медианой
-
-**Обоснование**: медиана устойчива к выбросам — ошибочные FIDE-рейтинги в профилях (игрок мог указать завышенный рейтинг) не искажают результат так сильно, как при использовании среднего арифметического.
+**Обоснование**: медиана устойчива к выбросам — ошибочные FIDE-рейтинги в профилях не искажают результат.
 
 ---
 
 ## Регрессионная модель
 
-При недостаточном количестве Anchor'ов ($n < 2$) используется регрессионная аппроксимация, построенная на верифицированных данных курсовой работы.
+При недостатке Anchor'ов (n < 2) используется линейная регрессия:
 
-### Линейная регрессия (Rapid → Standard)
+### Rapid → FIDE Standard
 
-Для каждого временного контроля «rapid» построена линейная регрессия вида:
+```
+FIDE = alpha * Rating(rapid) + beta
+```
 
-$$FIDE = \alpha \cdot R_{rapid} + \beta$$
-
-| Платформа | $\alpha$ | $\beta$ | $R^2$ |
-|-----------|---------|---------|-------|
+| Платформа | alpha | beta | R² |
+|-----------|-------|------|-----|
 | Lichess | 1.0005 | -247.62 | 0.9987 |
 | Chess.com | 0.9748 | -185.04 | 0.9992 |
 
-Высокий коэффициент детерминации ($R^2 > 0.998$) указывает на почти линейную зависимость между рейтингом на платформе и FIDE в диапазоне 800–3000.
+R² > 0.998 указывает на почти линейную зависимость.
 
 ### Референтные таблицы
 
-Для интерполяции используются референтные точки:
+**Lichess Rapid → FIDE:**
 
-**Lichess Rapid → FIDE Standard:**
-
-| Рейтинг Lichess | FIDE |
-|:---------------:|:----:|
+| Lichess | FIDE |
+|:-------:|:----:|
 | 800 | 550 |
 | 1000 | 750 |
 | 1200 | 950 |
@@ -164,49 +154,39 @@ $$FIDE = \alpha \cdot R_{rapid} + \beta$$
 | 1800 | 1550 |
 | 1900 | 1650 |
 | 2000 | 1770 |
-| 2100 | 1880 |
 | 2200 | 1980 |
-| 2300 | 2070 |
 | 2400 | 2150 |
 | 2500 | 2200 |
 
-**Chess.com Rapid → FIDE Standard:**
+**Chess.com Rapid → FIDE:**
 
-| Рейтинг Chess.com | FIDE |
-|:-----------------:|:----:|
+| Chess.com | FIDE |
+|:---------:|:----:|
 | 800 | 600 |
 | 1000 | 800 |
 | 1200 | 1000 |
 | 1400 | 1200 |
-| 1500 | 1300 |
 | 1600 | 1380 |
-| 1700 | 1460 |
 | 1800 | 1540 |
-| 1900 | 1630 |
 | 2000 | 1730 |
-| 2100 | 1840 |
 | 2200 | 1950 |
-| 2300 | 2060 |
 | 2400 | 2160 |
-| 2500 | 2260 |
 | 2600 | 2360 |
-| 2700 | 2460 |
 | 2800 | 2550 |
-| 2900 | 2650 |
 | 3000 | 2750 |
 
-Интерполяция — кусочно-линейная между референтными точками. Экстраполяция за пределами таблицы — линейная по последним двум точкам.
+Интерполяция — кусочно-линейная. Экстраполяция — по последним двум точкам.
 
 ### Масштабирование по временным контролам
 
-Регрессионная модель построена для «rapid» (наиболее репрезентативный контроль для FIDE Standard). Для других временных контролей применяются эмпирические коэффициенты масштабирования:
+Поправка к рейтингу на других временных контролях:
 
-$$\delta_{tc} = f(R_{tc}) \cdot s_{tc} + i_{tc}$$
+```
+FIDE(tc) = FIDE(rapid) * slope(tc) + intercept(tc)
+```
 
-где $f(R_{tc})$ — оценка по rapid-регрессии, $s_{tc}$ — коэффициент наклона, $i_{tc}$ — поправка интерцепта:
-
-| Платформа | Временной контроль | $s_{tc}$ | $i_{tc}$ |
-|-----------|-------------------|:--------:|:--------:|
+| Платформа | Контроль | slope | intercept |
+|-----------|----------|:-----:|:---------:|
 | Lichess | bullet | 0.88 | -150 |
 | Lichess | blitz | 0.93 | -100 |
 | Lichess | rapid | 1.00 | 0 |
@@ -218,111 +198,84 @@ $$\delta_{tc} = f(R_{tc}) \cdot s_{tc} + i_{tc}$$
 | Chess.com | classical | 1.01 | +30 |
 | Chess.com | daily | 1.01 | +30 |
 
-**Обоснование**: более быстрые контроли (bullet, blitz) имеют большее расхождение с FIDE, так как FIDE-рейтинг отражает игру в классических турнирах. Коэффициенты получены из кросс-референтного анализа распределений FIDE и платформенных рейтингов.
+**Обоснование**: быстрые контроли (bullet, blitz) имеют большее расхождение с FIDE, т.к. FIDE-рейтинг отражает игру в классических турнирах.
 
 ---
 
 ## Краудсорсинг
 
-Система накапливает вычисленные смещения в `cache/crowd_offsets.json`. Данные организованы по ключу `{time_class}:{rating_bracket}`:
+Система накапливает смещения в `cache/crowd_offsets.json`. Данные организованы по ключу:
 
-### Кластеризация по рейтинговым корзинам
+```
+{time_class}:{rating_bracket}
+```
 
-Рейтинговый диапазон разбивается на корзины шириной 100 пунктов:
+### Кластеризация
 
-$$B(R) = \left[ \left\lfloor \frac{R}{100} \right\rfloor \cdot 100, \; \left\lfloor \frac{R}{100} \right\rfloor \cdot 100 + 99 \right]$$
+Рейтинг разбивается на корзины шириной 100 пунктов:
 
-Для каждой корзины хранятся все вычисленные offset'ы с весами.
+```
+B(R) = [floor(R/100) * 100, floor(R/100) * 100 + 99]
+```
 
-### Использование краудсорсинга
+### Использование
 
-Когда для пользователя недостаточно прямых Anchor'ов:
+Когда для пользователя мало прямых Anchor'ов:
 
-1. Определяется текущий рейтинг пользователя $R_u$ и его временной контроль
-2. Вычисляется $B(R_u)$
-3. Загружаются offset'ы из соответствующей корзины
-4. Если корзина пуста — проверяются соседние: $B \pm 100$, $B \pm 200$
-5. Вычисляется средневзвешенный offset:
-
-$$\delta_{crowd} = \frac{\sum_{j} \delta_j \cdot w_j}{\sum_{j} w_j}$$
-
-6. Создаётся синтетический Anchor с весом $w_{crowd} = 0.3$ (низкая уверенность)
+1. Определяется текущий рейтинг `R(user)` и временной контроль
+2. Вычисляется корзина `B(R)`
+3. Если корзина пуста — проверяются соседние: B ± 100, B ± 200
+4. Вычисляется средневзвешенный offset
+5. Создаётся синтетический Anchor с весом 0.3 (низкая уверенность)
 
 ---
 
 ## CLI-агент
 
-CLI-агент входит в состав репозитория и не требует установки дополнительных зависимостей — только `python3`.
-
-### Установка
+CLI входит в состав репозитория, не требует установки доп. зависимостей — только Python 3.
 
 ```bash
-git clone https://github.com/inzexg-coder/fide-rating-calc.git
-cd fide-rating-calc
 export PATH="$PWD/.ameni/bin:$PATH"
+
+ameni fide estimate magnuscarlsen       # оценка FIDE
+ameni fide rating hikaru --chesscom     # только рейтинг
+ameni fide anchors fabianocaruana      # список якорей
+ameni fide daily levy                   # дневная динамика
+ameni fide check drnkat                 # всё сразу
+ameni fide help                         # справка
 ```
 
 ### Команды
 
-```
-ameni fide estimate <username>          Оценка FIDE-рейтинга
-ameni fide rating <username>            Итоговый рейтинг одной строкой
-ameni fide anchors <username>           Список якорей (таблица)
-ameni fide daily <username>             Дневная динамика
-ameni fide check <username>             Полная информация (estimate + anchors)
-ameni fide about                        Информация об агенте
-ameni fide help                         Полный мануал
-```
+| Команда | Описание |
+|---------|----------|
+| `estimate <user>` | Полная оценка FIDE-рейтинга |
+| `rating <user>` | Итоговый рейтинг одной строкой |
+| `anchors <user>` | Таблица якорей (титулованные соперники) |
+| `daily <user>` | Дневная динамика |
+| `check <user>` | estimate + anchors |
+| `about` | Информация об агенте |
+| `help` | Полный мануал |
 
 ### Опции
 
 | Опция | Описание |
 |-------|----------|
-| `--platform, -p` | Платформа: `lichess` (по умолч.) или `chesscom` |
+| `--platform, -p` | `lichess` (по умолч.) или `chesscom` |
 | `--chesscom` | Сокращение для `--platform chesscom` |
 | `--host URL` | API-хост (по умолч. `https://amenoke.ru`) |
-
-### Примеры
-
-```bash
-ameni fide estimate magnuscarlsen
-ameni fide estimate hikaru --chesscom
-ameni fide rating drnkat --chesscom
-ameni fide anchors fabianocaruana --platform chesscom
-ameni fide check levy --host http://127.0.0.1:8200
-```
-
-### Пример вывода
-
-```
-=== FIDE Rating Estimate ===
-
-  Игрок:       magnuscarlsen
-  Платформа:   lichess
-  API:         https://amenoke.ru/api/
-
-  Временной контроль     Рейтинг      FIDE    Точн.
-  ────────────────────────────────────────────
-  blitz                    2830       2730    94.2
-  rapid                    2765       2720    96.1
-  classical                2850       2830    97.8
-
-  Итоговая оценка:  2760 ± 45
-  Якорей:           12
-```
 
 ---
 
 ## API
 
-Бэкенд предоставляет REST API для интеграции.
+Бэкенд предоставляет REST API.
 
 ### Health Check
 
 ```
 GET /api/health
-
-→ {"status": "ok", "version": "3.0"}
+-> {"status": "ok", "version": "3.0"}
 ```
 
 ### Оценка рейтинга
@@ -330,15 +283,9 @@ GET /api/health
 ```
 POST /api/estimate
 Content-Type: application/json
+Body: {"platform": "lichess", "username": "magnuscarlsen"}
 
-{
-  "platform": "lichess",
-  "username": "magnuscarlsen"
-}
-
-→ {
-    "username": "magnuscarlsen",
-    "platform": "lichess",
+-> {
     "final_estimate": 2760,
     "confidence": 0.87,
     "num_anchors": 12,
@@ -347,30 +294,72 @@ Content-Type: application/json
   }
 ```
 
-### Server-Sent Events (SSE)
+### SSE (Server-Sent Events)
 
 ```
 GET /api/estimate/stream?platform=lichess&username=magnuscarlsen
 
-→ event: progress
-  data: {"step": "fetch", "message": "Загрузка...", "percent": 10}
+event: progress
+data: {"step": "fetch", "message": "Загрузка...", "percent": 10}
 
-  event: result
-  data: { ... }
+event: result
+data: { ... }
 ```
 
-### Клиентские партии
+### Клиентские партии (для Lichess, если заблокирован с сервера)
 
 ```
 POST /api/estimate/games
-Content-Type: application/json
-
-{
-  "platform": "lichess",
-  "username": "user",
-  "games": [...]
-}
+Body: {"platform": "lichess", "username": "user", "games": [...]}
 ```
+
+### Модели данных
+
+**GameData:**
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| game_id | string | ID партии |
+| date | string | ISO-дата |
+| speed | string | bullet/blitz/rapid/classical |
+| time_class | string | bullet/blitz/rapid/classical |
+| user_rating | int | Рейтинг пользователя |
+| opponent | string | Имя соперника |
+| opponent_rating | int | Рейтинг соперника |
+| opponent_title | string | Титул (GM/IM/FM/...) |
+| user_accuracy | float | Точность пользователя (0–100) |
+| opponent_accuracy | float | Точность соперника (0–100) |
+| user_color | string | "white"/"black" |
+| result | string | Результат |
+| platform | string | "lichess"/"chesscom" |
+
+---
+
+## Связанные скиллы
+
+<p align="center">
+  <a href="https://github.com/inzexg-coder/ameni-tg-parser">
+    <img src=".ameni/assets/skill-tg.svg" width="64" alt="TG Parser">
+  </a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/inzexg-coder/ameni-vs-kernel">
+    <img src=".ameni/assets/skill-vs.svg" width="64" alt="VS Kernel">
+  </a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/inzexg-coder/fide-rating-calc">
+    <img src=".ameni/assets/skill-fide.svg" width="64" alt="FIDE Calc">
+  </a>
+</p>
+
+<p align="center">
+
+| Скилл | Описание |
+|-------|----------|
+| [**ameni-tg-parser**](https://github.com/inzexg-coder/ameni-tg-parser) | Telegram Message Parser — анализ и визуализация чатов |
+| [**ameni-vs-kernel**](https://github.com/inzexg-coder/ameni-vs-kernel) | VS Kernel — диагностика Visual Studio, LNK-ошибки, .vcxproj |
+| [**fide-rating-calc**](https://github.com/inzexg-coder/fide-rating-calc) | **Вы здесь.** Оценка FIDE-рейтинга по партиям |
+
+</p>
 
 ---
 
@@ -378,45 +367,37 @@ Content-Type: application/json
 
 ```
 fide-rating-calc/
-├── .ameni/                    # CLI-агент
-│   ├── assets/
-│   │   └── ameni-logo.svg
-│   ├── bin/
-│   │   └── ameni              # bash-диспетчер
-│   └── lib/
-│       └── fide.py            # Python-логика CLI
-├── backend/                   # FastAPI-бэкенд
-│   ├── main.py                # Точка входа, роутинг
-│   ├── estimator.py           # Core: Anchor-метод + краудсорсинг
-│   ├── fetchers.py            # Загрузка партий (Lichess, Chess.com)
-│   ├── fide_client.py         # FIDE API (отключён)
-│   ├── fide_titles.py         # Справочник титулов
-│   └── regression.py          # Регрессионная модель
-├── cache/
-│   └── crowd_offsets.json     # Краудсорсинговые offset'ы
-├── frontend/
-│   └── index.html             # Веб-интерфейс
-├── fide-app.service           # systemd-юнит
-├── requirements.txt           # Зависимости
-├── setup_server.sh            # Скрипт развёртывания
-└── README.md
+  .ameni/
+    assets/          # Логотипы
+    bin/ameni        # CLI-диспетчер (bash)
+    lib/fide.py      # CLI-логика (Python)
+  backend/
+    main.py          # FastAPI, роутинг
+    estimator.py     # Anchor-метод + краудсорсинг
+    fetchers.py      # Загрузка партий (Lichess, Chess.com)
+    fide_titles.py   # Справочник титулов
+    regression.py    # Регрессионная модель
+  cache/
+    crowd_offsets.json
+  frontend/index.html  # Веб-интерфейс
+  fide-app.service     # systemd-юнит
 ```
 
 ### Компоненты
 
-| Компонент | Технология | Назначение |
-|-----------|-----------|------------|
-| Бэкенд | Python / FastAPI | API, Anchor-анализ, интеграция |
-| Фронтенд | HTML / CSS / JS + Chart.js | Веб-интерфейс |
-| CLI | Bash + Python3 | Консольный клиент |
-| Сервер | Uvicorn + Nginx | Продакшен |
+| Компонент | Технология |
+|-----------|-----------|
+| Бэкенд | Python / FastAPI |
+| Фронтенд | HTML / JS / Chart.js |
+| CLI | Bash + Python3 |
+| Сервер | Uvicorn + Nginx |
 
 ---
 
 ## FIDE Title Reference
 
-| Титул | Полное название |
-|-------|----------------|
+| Титул | Описание |
+|-------|----------|
 | GM | Grandmaster |
 | IM | International Master |
 | FM | FIDE Master |
@@ -429,17 +410,12 @@ fide-rating-calc/
 
 ---
 
-## Ссылки
-
-- **Репозиторий**: [github.com/inzexg-coder/fide-rating-calc](https://github.com/inzexg-coder/fide-rating-calc)
-- **Продакшен**: [amenoke.ru/fide-estimator](https://amenoke.ru/fide-estimator/)
-- **API**: [amenoke.ru/api/health](https://amenoke.ru/api/health)
-- **CLI**: `.ameni/bin/ameni fide`
-
----
-
 <p align="center">
   <img src=".ameni/assets/ameni-logo.svg" alt="Ameni" width="32">
   <br>
   <a href="https://github.com/inzexg-coder">@inzexg-coder</a>
+  <br>
+  <img src=".ameni/assets/skill-tg.svg" width="20" title="TG Parser">
+  <img src=".ameni/assets/skill-vs.svg" width="20" title="VS Kernel">
+  <img src=".ameni/assets/skill-fide.svg" width="20" title="FIDE Calc">
 </p>
