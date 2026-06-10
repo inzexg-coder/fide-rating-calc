@@ -157,7 +157,7 @@ tr:hover td { background: #12121a; }
       <div class="progress-bar" id="progressBar"></div>
     </div>
     <div class="progress-status">
-      <span class="progress-msg" id="progressMsg">Начинаю...</span>
+      <span class="progress-msg" id="progressMsg" style="display:none;">Начинаю...</span>
       <span class="progress-pct" id="progressPct">0%</span>
     </div>
   </div>
@@ -212,7 +212,9 @@ document.getElementById('usernameInput').addEventListener('keydown', e => {
 });
 function updateProgress(percent, message) {
   document.getElementById('progressBar').style.width = percent + '%';
-  document.getElementById('progressMsg').textContent = message;
+  // Update message if element exists (hidden but safe to update)
+  const msgEl = document.getElementById('progressMsg');
+  if (msgEl) msgEl.textContent = message;
   document.getElementById('progressPct').textContent = percent + '%';
 }
 function showError(msg) {
