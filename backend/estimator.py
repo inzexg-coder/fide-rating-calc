@@ -638,16 +638,22 @@ class Estimator:
         all_accs = [g.user_accuracy for g in games if g.user_accuracy is not None]
         avg_acc = sum(all_accs) / len(all_accs) / 100.0 if all_accs else 0.5
 
+        # Compute average user rating (for games that have it) as fallback for null ratings
+        all_ratings = [g.user_rating for g in games if g.user_rating is not None]
+        avg_rating = sum(all_ratings) / len(all_ratings) if all_ratings else 1200
+
         daily = []
         for game in games:
-            if game.user_rating:
-                fide = estimate_via_regression(platform, tc, fide_cat, game.user_rating)
-                if fide:
-                    # Accuracy adjustment: higher acc → higher FIDE
-                    # acc 0.5 → 1.0x,  acc 1.0 → 1.12x,  acc 0.0 → 0.85x
-                    acc = (game.user_accuracy / 100.0) if game.user_accuracy is not None else avg_acc
-                    mult = 0.85 + acc * 0.3  # 0.85 - 1.15 range
-                    fide = max(int(round(fide * mult)), 100)
+            # Use actual rating if available, otherwise use average for this TC
+            game_rating = game.user_rating if game.user_rating else avg_rating
+
+            fide = estimate_via_regression(platform, tc, fide_cat, game_rating)
+            if fide:
+                # Accuracy adjustment: higher acc → higher FIDE
+                # acc 0.5 → 1.0x,  acc 1.0 → 1.12x,  acc 0.0 → 0.85x
+                acc = (game.user_accuracy / 100.0) if game.user_accuracy is not None else avg_acc
+                mult = 0.85 + acc * 0.3  # 0.85 - 1.15 range
+                fide = max(int(round(fide * mult)), 100)
             else:
                 fide = None
 
