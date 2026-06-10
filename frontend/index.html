@@ -101,10 +101,7 @@ input[type="text"]:focus { border-color: #7c3aed; }
   font-size: 13px; color: #555; margin-top: 2px;
 }
 .tc-card .fide-max b { color: #888; }
-.tc-card .platform-rating {
-  font-size: 13px; color: #555; margin-top: 10px; padding-top: 10px;
-  border-top: 1px solid #1a1a26;
-}
+.tc-card 
 .tc-card .meta { font-size: 11px; color: #444; margin-top: 6px; }
 .tc-card .meta span { display: inline-block; margin: 0 4px; }
 .tc-card .badge {
@@ -257,49 +254,54 @@ function showError(msg) {
 // ── Lichess client-side fetch ──────────────────────────────────
 
 async function fetchLichessGames(username) {
-  const maxGames = 200;
-  const url = `https://lichess.org/api/games/user/${encodeURIComponent(username)}?max=${maxGames}&accuracy=true&sort=dateDesc`;
-  const games = [];
+  const TCS = ['blitz', 'rapid', 'classical'];
+  const maxPerTC = 200;
+  const allGames = [];
+  let totalFetched = 0;
 
-  updateProgress(2, 'Подключение к Lichess...');
-  const resp = await fetch(url, { headers: { 'Accept': 'application/x-ndjson' } });
+  for (let ti = 0; ti < TCS.length; ti++) {
+    const tc = TCS[ti];
+    const url = `https://lichess.org/api/games/user/${encodeURIComponent(username)}?perfType=${tc}&max=${maxPerTC}&accuracy=true&sort=dateDesc`;
+    updateProgress(2 + ti * 3, 'Загрузка ' + tc + '...');
 
-  if (!resp.ok) {
-    if (resp.status === 429) throw new Error('Лимит запросов Lichess. Попробуйте через минуту.');
-    if (resp.status === 404) throw new Error('Пользователь не найден на Lichess.');
-    throw new Error('Ошибка Lichess: ' + resp.status);
-  }
-
-  const reader = resp.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let count = 0;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop();
-
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        const raw = JSON.parse(line);
-        const g = parseLichessGame(raw, username);
-        if (g) games.push(g);
-        count++;
-        if (count % 25 === 0) {
-          updateProgress(5 + Math.min(20, Math.floor(count / maxGames * 20)),
-            'Загружено ' + count + ' партий...');
-        }
-      } catch (e) {}
+    const resp = await fetch(url, { headers: { 'Accept': 'application/x-ndjson' } });
+    if (!resp.ok) {
+      if (resp.status === 429) throw new Error('Лимит запросов Lichess. Попробуйте через минуту.');
+      if (resp.status === 404) continue; // No games in this TC, try next
+      continue;
     }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let count = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const raw = JSON.parse(line);
+          const g = parseLichessGame(raw, username);
+          if (g) allGames.push(g);
+          count++;
+        } catch (e) {}
+      }
+    }
+    totalFetched += count;
+    updateProgress(10 + ti * 5, tc + ': загружено ' + count + ' партий (' + totalFetched + ' всего)');
   }
 
-  games.sort((a, b) => new Date(a.date) - new Date(b.date));
-  updateProgress(25, 'Загружено ' + games.length + ' партий');
-  return games;
+  if (allGames.length === 0) throw new Error('Не удалось загрузить партии.');
+
+  allGames.sort((a, b) => new Date(a.date) - new Date(b.date));
+  updateProgress(25, 'Загружено ' + allGames.length + ' партий');
+  return allGames;
 }
 
 function parseLichessGame(raw, targetUser) {
@@ -353,12 +355,12 @@ async function fetchChesscomGames(username) {
 
   if (archives.length === 0) throw new Error('Нет архивов партий.');
 
-  const recentArchives = archives.slice(-3);
+  const recentArchives = archives.slice(-12);
   updateProgress(5, 'Архивов найдено: ' + recentArchives.length);
 
   for (let ai = 0; ai < recentArchives.length; ai++) {
     const url = recentArchives[ai];
-    updateProgress(8 + ai * 5, 'Загрузка архива ' + (ai + 1) + '/' + recentArchives.length + '...');
+    updateProgress(5 + ai * 2, 'Загрузка архива ' + (ai + 1) + '/' + recentArchives.length + '...');
     const gResp = await fetch(url);
     if (!gResp.ok) continue;
     const data = await gResp.json();
@@ -366,7 +368,7 @@ async function fetchChesscomGames(username) {
       const g = parseChesscomGame(raw, username);
       if (g) games.push(g);
     }
-    await new Promise(r => setTimeout(r, 200));
+    await new Promise(r => setTimeout(r, 150));
   }
 
   if (games.length === 0) throw new Error('Не удалось загрузить партии.');
@@ -518,7 +520,7 @@ function showResults(data) {
       '<div class="tc-cat">FIDE ' + tcData.fide_category + '</div>' +
       '<div class="fide-current">' + fideCurrent + '</div>' +
       '<div class="fide-max">макс. <b>' + fideMax + '</b></div>' +
-      '<div class="platform-rating">платформа: ' + platRating + '</div>' +
+      
       '<div class="meta">' + badgeHtml + ' <span>' + tcData.total_games + ' игр</span></div>';
     grid.appendChild(card);
   });
