@@ -335,33 +335,6 @@ Body: {"platform": "lichess", "username": "user", "games": [...]}
 
 ---
 
-## Связанные скиллы
-
-<p align="center">
-  <a href="https://github.com/inzexg-coder/ameni-tg-parser">
-    <img src=".ameni/assets/skill-tg.svg" width="64" alt="TG Parser">
-  </a>
-  &nbsp;&nbsp;&nbsp;
-  <a href="https://github.com/inzexg-coder/ameni-vs-kernel">
-    <img src=".ameni/assets/skill-vs.svg" width="64" alt="VS Kernel">
-  </a>
-  &nbsp;&nbsp;&nbsp;
-  <a href="https://github.com/inzexg-coder/fide-rating-calc">
-    <img src=".ameni/assets/skill-fide.svg" width="64" alt="FIDE Calc">
-  </a>
-</p>
-
-<p align="center">
-
-| Скилл | Описание |
-|-------|----------|
-| [**ameni-tg-parser**](https://github.com/inzexg-coder/ameni-tg-parser) | Telegram Message Parser — анализ и визуализация чатов |
-| [**ameni-vs-kernel**](https://github.com/inzexg-coder/ameni-vs-kernel) | VS Kernel — диагностика Visual Studio, LNK-ошибки, .vcxproj |
-| [**fide-rating-calc**](https://github.com/inzexg-coder/fide-rating-calc) | **Вы здесь.** Оценка FIDE-рейтинга по партиям |
-
-</p>
-
----
 
 ## Архитектура
 
