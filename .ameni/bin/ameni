@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly AMENI_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly AMENI_REPO_URL="https://github.com/inzexg-coder/fide-rating-calc"
+readonly FIDE_CLI="$AMENI_HOME/lib/fide.py"
+
+readonly CLR_RESET='\033[0m'
+readonly CLR_RED='\033[0;31m'
+readonly CLR_GREEN='\033[0;32m'
+readonly CLR_YELLOW='\033[1;33m'
+readonly CLR_CYAN='\033[0;36m'
+readonly CLR_BOLD='\033[1m'
+readonly CLR_DIM='\033[2m'
+
+_info()   { echo -e "${CLR_GREEN}[INFO]${CLR_RESET}  $*"; }
+_warn()   { echo -e "${CLR_YELLOW}[WARN]${CLR_RESET}  $*"; }
+_error()  { echo -e "${CLR_RED}[ERROR]${CLR_RESET} $*" >&2; }
+_header() { echo -e "${CLR_CYAN}=== $* ===${CLR_RESET}"; }
+
+_cmd_fide() {
+  python3 "$FIDE_CLI" "$@"
+}
+
+_cmd_about() {
+  echo ""
+  echo -e "${CLR_BOLD}Ameni FIDE Rating Calculator${CLR_RESET}"
+  echo "CLI-агент для оценки FIDE-рейтинга по партиям с Lichess и Chess.com"
+  echo "${AMENI_REPO_URL}"
+  echo ""
+  echo "Основан на Anchor-методе: поиск титулованных соперников"
+  echo "с известным FIDE-рейтингом и вычисление смещения."
+  echo ""
+  echo "Команды:"
+  echo "  estimate <user>    Оценка FIDE-рейтинга"
+  echo "  rating <user>      Только итоговый рейтинг (одной строкой)"
+  echo "  anchors <user>     Список якорей (титулованные соперники)"
+  echo "  daily <user>       Дневная динамика"
+  echo "  check <user>       Полная информация (estimate + anchors)"
+  echo "  about              Информация об агенте"
+  echo "  help               Полный мануал"
+  echo ""
+  echo "Опции:"
+  echo "  --platform, -p     Платформа: lichess (по умолч.) или chesscom"
+  echo "  --chesscom         Сокращение для --platform chesscom"
+  echo "  --host URL         API-хост (по умолч. https://amenoke.ru)"
+  echo ""
+}
+
+_cmd_help() {
+  _cmd_about
+  echo ""
+  echo -e "${CLR_BOLD}ПРИМЕРЫ${CLR_RESET}"
+  echo ""
+  echo "  ameni fide estimate magnuscarlsen"
+  echo "  ameni fide estimate drnkat --chesscom"
+  echo "  ameni fide rating hikaru"
+  echo "  ameni fide anchors fabianocaruana --platform chesscom"
+  echo "  ameni fide check levy --host http://127.0.0.1:8200"
+  echo "  ameni fide about"
+  echo ""
+  echo -e "${CLR_BOLD}ЗАВИСИМОСТИ${CLR_RESET}"
+  echo "  python3 (стандартная библиотека, доп. пакетов не требуется)"
+  echo ""
+  echo -e "${CLR_BOLD}ФАЙЛЫ${CLR_RESET}"
+  echo "  .ameni/bin/ameni       CLI-агент (bash - диспетчер)"
+  echo "  .ameni/lib/fide.py     CLI-агент (python - форматирование)"
+  echo "  backend/               FastAPI-бэкенд"
+  echo "  frontend/              Веб-интерфейс"
+  echo ""
+  echo -e "${CLR_BOLD}ССЫЛКИ${CLR_RESET}"
+  echo "  Репозиторий:  ${AMENI_REPO_URL}"
+  echo "  Продакшен:    https://amenoke.ru/fide-estimator/"
+  echo ""
+}
+
+# --- Main dispatch ---
+if [[ $# -lt 1 ]]; then
+  _cmd_help
+  exit 0
+fi
+
+case "${1:-help}" in
+  estimate|rating|anchors|daily|check) _cmd_fide "$@" ;;
+  about)     _cmd_about ;;
+  help|--help|-h|*) _cmd_help ;;
+esac
