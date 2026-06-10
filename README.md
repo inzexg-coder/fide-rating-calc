@@ -10,6 +10,8 @@
 </p>
 
 <h1 align="center">Ameni FIDE Rating Calculator</h1>
+<h1 align="center">https://amenoke.ru/fide-estimate</h1>
+
 
 <p align="center">
   Anchor-оценка FIDE-рейтинга по партиям с Lichess и Chess.com.<br>
