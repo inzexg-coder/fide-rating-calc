@@ -10,7 +10,7 @@
 </p>
 
 <h1 align="center">Ameni FIDE Rating Calculator</h1>
-<h1 align="center">https://amenoke.ru/fide-estimate</h1>
+<h3 align="center">https://amenoke.ru/fide-estimator</h3>
 
 
 <p align="center">
