@@ -177,7 +177,6 @@ tr:hover td { background: #12121a; }
       </div>
     </div>
     <div class="anchors-section" id="anchorsSection" style="display:none;">
-      <h3>Якоря (титулованные соперники с FIDE рейтингом)</h3>
       <div class="anchors-table-wrap">
         <table>
           <thead>
@@ -186,10 +185,6 @@ tr:hover td { background: #12121a; }
               <th>Соперник</th>
               <th>Титул</th>
               <th>Контроль</th>
-              <th>Рейтинг</th>
-              <th>FIDE</th>
-              <th>Offset</th>
-              <th>Тип</th>
             </tr>
           </thead>
           <tbody id="anchorsBody"></tbody>
@@ -577,16 +572,11 @@ function renderAnchors(data) {
   data.anchors.forEach(anchor => {
     const row = document.createElement('tr');
     const date = new Date(anchor.date).toLocaleDateString('ru');
-    const rating = anchor.fide_rating?.toString().padStart(4, ' ');
-    const offset = anchor.adjusted_offset?.toFixed(1);
     row.innerHTML =
       `<td>${date}</td>
        <td>${anchor.opponent}</td>
        <td>${anchor.title || '—'}</td>
-       <td>${anchor.time_class}</td>
-       <td class="fide-col">${rating || '—'}</td>
-       <td class="fide-col">${offset || '—'}</td>
-       <td>${anchor.direct ? 'Прямая' : 'Косвенная'}</td>`;
+       <td>${anchor.time_class}</td>`;
     tbody.appendChild(row);
   });
   document.getElementById('anchorsSection').style.display = 'block';
