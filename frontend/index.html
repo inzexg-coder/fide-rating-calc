@@ -212,7 +212,7 @@ document.getElementById('usernameInput').addEventListener('keydown', e => {
 });
 function updateProgress(percent, message) {
   document.getElementById('progressBar').style.width = percent + '%';
-
+  // Update message if element exists (hidden but safe to update)
   const msgEl = document.getElementById('progressMsg');
   if (msgEl) msgEl.textContent = message;
   document.getElementById('progressPct').textContent = percent + '%';
@@ -223,7 +223,7 @@ function showError(msg) {
   document.getElementById('progressSection').classList.remove('active');
   document.getElementById('goBtn').disabled = false;
 }
-
+// ── Lichess client-side fetch ──────────────────────────────────
 async function fetchLichessGames(username) {
   const TCS = ['blitz', 'rapid', 'classical'];
   const maxPerTC = 200;
@@ -231,12 +231,12 @@ async function fetchLichessGames(username) {
   let totalFetched = 0;
   for (let ti = 0; ti < TCS.length; ti++) {
     const tc = TCS[ti];
-    const url = `https:
+    const url = `https://lichess.org/api/games/user/${encodeURIComponent(username)}?perfType=${tc}&max=${maxPerTC}&accuracy=true&sort=dateDesc`;
     updateProgress(2 + ti * 3, 'Загрузка ' + tc + '...');
     const resp = await fetch(url, { headers: { 'Accept': 'application/x-ndjson' } });
     if (!resp.ok) {
       if (resp.status === 429) throw new Error('Лимит запросов Lichess. Попробуйте через минуту.');
-      if (resp.status === 404) continue;
+      if (resp.status === 404) continue; // No games in this TC, try next
       continue;
     }
     const reader = resp.body.getReader();
@@ -298,11 +298,11 @@ function parseLichessGame(raw, targetUser) {
     platform: 'lichess',
   };
 }
-
+// ── Chess.com client-side fetch ───────────────────────────────
 async function fetchChesscomGames(username) {
   let games = [];
   updateProgress(2, 'Подключение к Chess.com...');
-  const archResp = await fetch(`https:
+  const archResp = await fetch(`https://api.chess.com/pub/player/${encodeURIComponent(username)}/games/archives`);
   if (!archResp.ok) {
     if (archResp.status === 404) throw new Error('Пользователь не найден на Chess.com.');
     throw new Error('Ошибка Chess.com: ' + archResp.status);
@@ -331,7 +331,7 @@ async function fetchChesscomGames(username) {
   for (const opp of opponents) {
     if (checked >= 20) break;
     try {
-      const pResp = await fetch(`https:
+      const pResp = await fetch(`https://api.chess.com/pub/player/${encodeURIComponent(opp)}`);
       if (pResp.ok) {
         const prof = await pResp.json();
         if (prof.title) titleMap[opp] = prof.title.toUpperCase();
@@ -345,7 +345,7 @@ async function fetchChesscomGames(username) {
   for (const g of games) {
     if (titleMap[g.opponent]) g.opponent_title = titleMap[g.opponent];
   }
-
+  // Limit to 200 per time control
   const tcLimit = {};
   games = games.filter(g => {
     tcLimit[g.time_class] = (tcLimit[g.time_class] || 0) + 1;
@@ -380,7 +380,7 @@ function parseChesscomGame(raw, targetUser) {
     platform: 'chesscom',
   };
 }
-
+// ── Main analysis ─────────────────────────────────────────────
 async function startAnalysis() {
   const username = document.getElementById('usernameInput').value.trim();
   if (!username) return;
@@ -398,7 +398,7 @@ async function startAnalysis() {
       games = await fetchChesscomGames(username);
     }
     if (games.length === 0) { showError('Не удалось загрузить партии.'); return; }
-
+    // Show total fetched but limit to 200 per time control when sending
     const totalFetched = games.length;
     const tcCounts = {};
     const limitedGames = games.filter(g => {
@@ -431,20 +431,20 @@ async function startAnalysis() {
     document.getElementById('goBtn').disabled = false;
   }
 }
-
+// ── Results display ──────────────────────────────────────────
 function showResults(data) {
   chartData = data;
   document.getElementById('results').classList.add('active');
   document.getElementById('resultUsername').textContent = data.username;
   
-
+  // Check if any time control has >= 50 games
   const hasEnoughGames = Object.keys(data.time_controls).some(tc => {
     const tcData = data.time_controls[tc];
     return !tcData.error && tcData.current_fide != null && tcData.total_games >= 50;
   });
   
   if (!hasEnoughGames) {
-
+    // Show message instead of controls
     document.getElementById('resultStats').textContent = 'Недостаточно игр (нужно минимум 50 в одном контроле)';
     document.getElementById('tcGrid').innerHTML = '';
     document.getElementById('tcTabs').innerHTML = '';
@@ -462,7 +462,7 @@ function showResults(data) {
     statsText += ', ср. точность ' + data.average_accuracy + '%';
   }
   document.getElementById('resultStats').textContent = statsText;
-
+  // TC cards
   const grid = document.getElementById('tcGrid');
   grid.innerHTML = '';
   tcs.forEach(tc => {
@@ -487,7 +487,7 @@ function showResults(data) {
       '<div class="meta">' + badgeHtml + ' <span>' + tcData.total_games + ' игр</span></div>';
     grid.appendChild(card);
   });
-
+  // Chart tabs
   const tabsContainer = document.getElementById('tcTabs');
   tabsContainer.innerHTML = '';
   let firstValidTc = null;
@@ -507,10 +507,10 @@ function showResults(data) {
     tabsContainer.appendChild(tab);
   });
   if (firstValidTc) renderChart(firstValidTc);
-
+  // Anchors
   renderAnchors(data);
 }
-
+// ── Animated chart ────────────────────────────────────────────
 function renderChart(tc) {
   if (!chartData) return;
   const tcData = chartData.time_controls[tc];
@@ -523,7 +523,7 @@ function renderChart(tc) {
   const fideData = daily.map(d => d.estimated_fide);
   const ctx = document.getElementById('chart').getContext('2d');
   if (chartInstance) chartInstance.destroy();
-
+  // Gradient fill
   const gradient = ctx.createLinearGradient(0, 0, 0, 350);
   gradient.addColorStop(0, 'rgba(167, 139, 250, 0.2)');
   gradient.addColorStop(1, 'rgba(167, 139, 250, 0.01)');
@@ -582,7 +582,7 @@ function renderChart(tc) {
     }
   });
 }
-
+// ── Anchors table ─────────────────────────────────────────────
 function renderAnchors(data) {
   if (!data.anchors || data.anchors.length === 0) return;
   const tbody = document.getElementById('anchorsBody');
