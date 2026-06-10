@@ -285,6 +285,12 @@ class Estimator:
 
             all_anchors = list(titled)
 
+            # Step 1a: Non-titled regression anchors (always, even offline)
+            nontitled_reg = await self._find_nontitled_regression_references(games, fide_cat, platform, tc)
+            if nontitled_reg:
+                await self._report("anchors", f"Плюс {len(nontitled_reg)} не-титулованных якорей (регрессия)", 61)
+                all_anchors.extend(nontitled_reg)
+
             # Step 1b: User's own FIDE from profile (Lichess)
             if lichess_ok:
                 user_fide = await self._find_user_own_fide(platform, username, games, fide_cat, session)
@@ -533,6 +539,31 @@ class Estimator:
                 fide_category=fide_cat,
                 direct=True, is_titled=False,
             ))
+        return Anchors
+
+    async def _find_nontitled_regression_references(self, games: list, fide_cat: str,
+                                                    platform: str, tc: str) -> list:
+        """Use regression-estimated FIDE for non-titled opponents as weak anchors.
+        These have lower weight than titled anchors but provide additional signal."""
+        from regression import estimate_via_regression
+        Anchors = []
+        for game in games:
+            if game.opponent_title and game.opponent_title.upper() in FIDE_TITLES:
+                continue  # already handled by titled references
+            if not game.opponent_rating:
+                continue
+            fide = estimate_via_regression(platform, tc, fide_cat, game.opponent_rating)
+            if fide is None:
+                continue
+            a = Anchor(
+                game=game, title="",
+                fide_rating=fide,
+                fide_category=fide_cat,
+                direct=False,
+                is_titled=False,
+            )
+            a.weight = 0.15  # lower weight than titled (0.5+) or non-titled profile (0.3)
+            Anchors.append(a)
         return Anchors
 
     # ── Profile FIDE Anchors (existing, more stringent checks) ──────
