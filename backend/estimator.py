@@ -12,7 +12,6 @@ from fetchers import _lich_profile_fide, _lich_get_user, _make_session, _lich_us
 from fetchers import _cc_opponent_fide
 from regression import estimate_via_regression
 
-# ── Crowdsourcing ───────────────────────────────────────────────────
 CROWD_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cache", "crowd_offsets.json")
 
 def _load_crowd():
@@ -144,7 +143,6 @@ class Estimator:
         if self._progress:
             await self._progress(step, message, min(percent, 99))
 
-    # ── Main entry ──────────────────────────────────────────────────
 
     async def estimate_from_games(self, platform: str, username: str, games: list) -> dict:
         """Run FIDE estimation on pre-fetched games (client-provided)."""
@@ -379,7 +377,6 @@ class Estimator:
         if profile_fide is None:
             return None
 
-        # Get user's current platform rating
         last_rating = None
         for g in reversed(games):
             if g.user_rating:
@@ -388,13 +385,11 @@ class Estimator:
         if last_rating is None:
             return None
 
-        # Anti-inflation: FIDE should be < 2000 and < platform rating
         if profile_fide >= 2000:
             return None
         if profile_fide >= last_rating:
             return None
 
-        # Create a synthetic Anchor from this
         class FakeGame:
             pass
         fake = FakeGame()
@@ -408,7 +403,6 @@ class Estimator:
         fake.opponent_accuracy = None
         fake.platform = "lichess"
 
-        # The offset represents how much lower FIDE is than platform rating
         offset = profile_fide - last_rating
         a = Anchor.__new__(Anchor)
         a.game_id = None
@@ -425,10 +419,9 @@ class Estimator:
         a.opponent_accuracy = None
         a.direct = True
         a.is_titled = False
-        a.weight = 0.25  # lower confidence but still useful
+        a.weight = 0.25
         return a
 
-    # ── Anchor search: titled opponents → Lichess profile FIDE ─────
 
 
     async def _find_titled_references(self, games: list, fide_cat: str,
@@ -609,7 +602,6 @@ class Estimator:
 
         return Anchors
 
-    # ── Chain search ────────────────────────────────────────────────
 
     async def _find_indirect_anchors(self, games: list, tc: str, platform: str,
                                      fide_cat: str, session) -> list:
@@ -661,7 +653,6 @@ class Estimator:
         except Exception:
             return []
 
-    # ── Regression fallback builder ──────────────────────────────────
 
     def _build_regression_daily(self, games: list, platform: str,
                                  tc: str, fide_cat: str) -> list:
