@@ -436,6 +436,22 @@ function showResults(data) {
   chartData = data;
   document.getElementById('results').classList.add('active');
   document.getElementById('resultUsername').textContent = data.username;
+  
+  // Check if any time control has >= 50 games
+  const hasEnoughGames = Object.keys(data.time_controls).some(tc => {
+    const tcData = data.time_controls[tc];
+    return !tcData.error && tcData.current_fide != null && tcData.total_games >= 50;
+  });
+  
+  if (!hasEnoughGames) {
+    // Show message instead of controls
+    document.getElementById('resultStats').textContent = 'Недостаточно игр (нужно минимум 50 в одном контроле)';
+    document.getElementById('tcGrid').innerHTML = '';
+    document.getElementById('tcTabs').innerHTML = '';
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+    return;
+  }
+  
   const tcs = Object.keys(data.time_controls).filter(tc => {
     const tcData = data.time_controls[tc];
     return !tcData.error && tcData.current_fide != null && tcData.total_games >= 10;
