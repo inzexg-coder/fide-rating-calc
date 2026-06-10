@@ -183,12 +183,20 @@ class Estimator:
         all_accs = [g.user_accuracy for g in games if g.user_accuracy is not None]
         avg_accuracy = round(sum(all_accs) / len(all_accs), 1) if all_accs else None
 
+        # Collect all anchors from all time controls into a top-level list
+        all_anchors = []
+        for tc_data in results.values():
+            if isinstance(tc_data, dict) and "anchors" in tc_data:
+                for a in tc_data["anchors"]:
+                    all_anchors.append(a)
+
         return {
             "username": username,
             "platform": platform,
             "total_games": len(games),
             "average_accuracy": avg_accuracy,
             "time_controls": results,
+            "anchors": all_anchors,
         }
 
 
@@ -240,12 +248,20 @@ class Estimator:
         all_accs = [g.user_accuracy for g in games if g.user_accuracy is not None]
         avg_accuracy = round(sum(all_accs) / len(all_accs), 1) if all_accs else None
 
+        # Collect all anchors from all time controls into a top-level list
+        all_anchors = []
+        for tc_data in results.values():
+            if isinstance(tc_data, dict) and "anchors" in tc_data:
+                for a in tc_data["anchors"]:
+                    all_anchors.append(a)
+
         return {
             "username": username,
             "platform": platform,
             "total_games": len(games),
             "average_accuracy": avg_accuracy,
             "time_controls": results,
+            "anchors": all_anchors,
         }
 
     # ── Process one time control ────────────────────────────────────
@@ -260,8 +276,8 @@ class Estimator:
                 await self._report("fetch", "⚠ Lichess API недоступен с сервера. Используются только регрессионные формулы.", 55)
 
             # Step 1: Titled Anchors — use Lichess profile FIDE (or Chess.com profile FIDE)
-            titled = await self._find_titled_anchors(games, fide_cat, session, lichess_ok)
-            await self._report("Anchor", f"Найдено {len(titled)} титулованных якорей в {tc}", 60)
+            titled = await self._find_titled_references(games, fide_cat, session, lichess_ok)
+            await self._report("anchors", f"Найдено {len(titled)} титулованных якорей в {tc}", 60)
 
             all_anchors = list(titled)
 
@@ -269,37 +285,37 @@ class Estimator:
             if lichess_ok:
                 user_fide = await self._find_user_own_fide(platform, username, games, fide_cat, session)
                 if user_fide:
-                    await self._report("Anchor", f"Твой FIDE из профиля: {user_fide}", 62)
+                    await self._report("anchors", f"Твой FIDE из профиля: {user_fide}", 62)
                     all_anchors.append(user_fide)
 
             # Step 1c: Profile FIDE Anchors (opponents with FIDE in Lichess profile)
             if lichess_ok:
-                profile = await self._find_profile_fide_anchors(games, fide_cat, session)
+                profile = await self._find_profile_fide_references(games, fide_cat, session)
                 if profile:
-                    await self._report("Anchor", f"Плюс {len(profile)} якорей из профилей Lichess", 63)
+                    await self._report("anchors", f"Плюс {len(profile)} якорей из профилей Lichess", 63)
                     all_anchors.extend(profile)
 
             # Step 2: Non-titled FIDE Anchors (any opponent with FIDE in profile)
             if lichess_ok:
-                nontitled = await self._find_nontitled_anchors(games, fide_cat, session)
+                nontitled = await self._find_nontitled_references(games, fide_cat, session)
                 all_anchors.extend(nontitled)
                 if nontitled:
-                    await self._report("Anchor", f"Плюс {len(nontitled)} не-титулованных якорей с FIDE", 65)
+                    await self._report("anchors", f"Плюс {len(nontitled)} не-титулованных якорей с FIDE", 65)
 
             # Step 3: Chain search (only if Lichess is reachable)
             if not all_anchors and lichess_ok:
                 await self._report("chain", "Якорей нет. Ищу косвенные через последнего соперника...", 70)
-                indirect = await self._find_indirect_Anchors(games, tc, platform, fide_cat, session)
+                indirect = await self._find_indirect_anchors(games, tc, platform, fide_cat, session)
                 all_anchors = indirect
                 if indirect:
-                    await self._report("Anchor", f"Найдено {len(indirect)} косвенных якорей", 75)
+                    await self._report("anchors", f"Найдено {len(indirect)} косвенных якорей", 75)
 
             # Step 4: Crowd offsets
             if not all_anchors:
-                await self._report("Anchor", "Якорей не найдено. Fallback: краудсорсинг...", 75)
+                await self._report("anchors", "Якорей не найдено. Fallback: краудсорсинг...", 75)
                 crowd = self._get_crowd_fallback(games, fide_cat)
                 if crowd is not None:
-                    await self._report("Anchor", f"Fallback: краудсорсинг (offset={crowd:+.0f})", 78)
+                    await self._report("anchors", f"Fallback: краудсорсинг (offset={crowd:+.0f})", 78)
                     fake_anchor = self._make_crowd_anchor(games, crowd, fide_cat)
                     all_anchors = [fake_anchor]
 
@@ -327,14 +343,14 @@ class Estimator:
             "time_class": tc,
             "fide_category": fide_cat,
             "total_games": len(games),
-            "direct_Anchors": len([a for a in all_anchors if a.direct and a.is_titled]),
-            "indirect_Anchors": len([a for a in all_anchors if not a.direct]),
-            "total_Anchors": len(all_anchors),
-            "has_Anchors": has_Anchors,
+            "direct_anchors": len([a for a in all_anchors if a.direct and a.is_titled]),
+            "indirect_anchors": len([a for a in all_anchors if not a.direct]),
+            "total_anchors": len(all_anchors),
+            "has_anchors": has_Anchors,
             "current_fide": current_fide,
             "max_fide": max_fide,
             "user_platform_rating": user_rating,
-            "Anchor": [a.to_dict() for a in all_anchors],
+            "anchors": [a.to_dict() for a in all_anchors],
             "daily_estimates": [d.to_dict() for d in daily],
         }
 
@@ -560,7 +576,7 @@ class Estimator:
 
     # ── Chain search ────────────────────────────────────────────────
 
-    async def _find_indirect_Anchors(self, games: list, tc: str, platform: str,
+    async def _find_indirect_anchors(self, games: list, tc: str, platform: str,
                                      fide_cat: str, session) -> list:
         if not games:
             return []
@@ -596,8 +612,8 @@ class Estimator:
 
             await self._report("chain", f"Поиск источников в {len(opp_tc_games)} партиях {tc}...", 74)
 
-            indirect = await self._find_titled_anchors(opp_tc_games, fide_cat, session)
-            indirect += await self._find_nontitled_anchors(opp_tc_games, fide_cat, session)
+            indirect = await self._find_titled_references(opp_tc_games, fide_cat, session)
+            indirect += await self._find_nontitled_references(opp_tc_games, fide_cat, session)
 
             for a in indirect:
                 a.direct = False
@@ -652,7 +668,7 @@ class Estimator:
         for tc_name, tc_data in results.items():
             if "error" in tc_data:
                 continue
-            for a in tc_data.get("Anchor", []):
+            for a in tc_data.get("anchors", []):
                 if a.get("raw_offset") is None:
                     continue
                 b = _bracket(a["platform_rating"])

@@ -1,7 +1,6 @@
 import asyncio
 import json
 import os
-import sys
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -68,7 +67,7 @@ async def health():
 
 @app.post("/api/estimate")
 async def estimate(req: EstimateRequest):
-    """Legacy endpoint — uses server-side fetching (Chess.com works, Lichess may fail)."""
+    """Server-side fetching (Chess.com works, Lichess may be blocked)."""
     if req.platform not in ("lichess", "chesscom"):
         raise HTTPException(400, "Platform must be 'lichess' or 'chesscom'")
     if not req.username.strip():
@@ -154,10 +153,13 @@ async def estimate_stream(platform: str = Query(...), username: str = Query(...)
                     result_sent = True
                 continue
 
+        # Await the background task to prevent premature cancellation on disconnect
+        await task
+
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
-# ── NEW: Client‑submitted games endpoint ────────────────────────────
+# ── Client-submitted games endpoint ─────────────────────────────────
 
 @app.post("/api/estimate/games")
 async def estimate_games(req: BatchEstimateRequest):
@@ -208,7 +210,7 @@ async def estimate_games(req: BatchEstimateRequest):
         raise HTTPException(500, f"Internal error: {str(e)}")
 
 
-# ── NEW: Lichess proxy endpoint (client-fetched games) ─────────────
+# ── Lichess proxy endpoint (client-fetched games) ───────────────────
 
 @app.post("/api/estimate/stream/games")
 async def estimate_stream_games(req: BatchEstimateRequest):
@@ -220,8 +222,3 @@ async def estimate_stream_games(req: BatchEstimateRequest):
 frontend_path = Path(__file__).parent.parent / "frontend"
 if frontend_path.exists():
     app.mount("/", StaticFiles(directory=str(frontend_path), html=True), name="frontend")
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=8200, reload=True)

@@ -297,7 +297,6 @@ async function fetchLichessGames(username) {
     }
   }
 
-  // Sort by date ascending
   games.sort((a, b) => new Date(a.date) - new Date(b.date));
   updateProgress(25, 'Загружено ' + games.length + ' партий');
   return games;
@@ -305,7 +304,6 @@ async function fetchLichessGames(username) {
 
 function parseLichessGame(raw, targetUser) {
   const speed = raw.speed;
-  // Skip bullet entirely
   if (!['blitz','rapid','classical','correspondence'].includes(speed)) return null;
   const players = raw.players || {};
   const white = players.white || {};
@@ -327,7 +325,6 @@ function parseLichessGame(raw, targetUser) {
   const userAcc = (user.analysis || {}).accuracy || null;
   const oppAcc = (opp.analysis || {}).accuracy || null;
 
-  // Map correspondence→classical
   const tc = speed === 'correspondence' ? 'classical' : speed;
 
   return {
@@ -347,7 +344,6 @@ async function fetchChesscomGames(username) {
   const games = [];
   updateProgress(2, 'Подключение к Chess.com...');
 
-  // Step 1: Get archives list
   const archResp = await fetch(`https://api.chess.com/pub/player/${encodeURIComponent(username)}/games/archives`);
   if (!archResp.ok) {
     if (archResp.status === 404) throw new Error('Пользователь не найден на Chess.com.');
@@ -357,11 +353,9 @@ async function fetchChesscomGames(username) {
 
   if (archives.length === 0) throw new Error('Нет архивов партий.');
 
-  // Use last 3 months
   const recentArchives = archives.slice(-3);
   updateProgress(5, 'Архивов найдено: ' + recentArchives.length);
 
-  // Step 2: Fetch games from each archive
   for (let ai = 0; ai < recentArchives.length; ai++) {
     const url = recentArchives[ai];
     updateProgress(8 + ai * 5, 'Загрузка архива ' + (ai + 1) + '/' + recentArchives.length + '...');
@@ -372,20 +366,19 @@ async function fetchChesscomGames(username) {
       const g = parseChesscomGame(raw, username);
       if (g) games.push(g);
     }
-    await new Promise(r => setTimeout(r, 200)); // be nice
+    await new Promise(r => setTimeout(r, 200));
   }
 
   if (games.length === 0) throw new Error('Не удалось загрузить партии.');
 
   updateProgress(20, 'Загружено ' + games.length + ' партий. Проверка титулов...');
 
-  // Step 3: Fetch opponent profiles for titles
   const opponents = [...new Set(games.map(g => g.opponent).filter(o => o !== '?'))];
   const titleMap = {};
   let checked = 0;
 
   for (const opp of opponents) {
-    if (checked >= 20) break; // limit to avoid rate limiting
+    if (checked >= 20) break;
     try {
       const pResp = await fetch(`https://api.chess.com/pub/player/${encodeURIComponent(opp)}`);
       if (pResp.ok) {
@@ -399,12 +392,10 @@ async function fetchChesscomGames(username) {
       'Проверка ' + checked + '/' + Math.min(opponents.length, 20) + ' соперников...');
   }
 
-  // Apply titles
   for (const g of games) {
     if (titleMap[g.opponent]) g.opponent_title = titleMap[g.opponent];
   }
 
-  // Sort by date ascending
   games.sort((a, b) => new Date(a.date) - new Date(b.date));
   updateProgress(30, 'Загружено ' + games.length + ' партий');
   return games;
@@ -412,7 +403,6 @@ async function fetchChesscomGames(username) {
 
 function parseChesscomGame(raw, targetUser) {
   const tc = raw.time_class;
-  // Skip bullet & daily
   if (!['blitz','rapid','classical'].includes(tc)) return null;
 
   const tl = targetUser.toLowerCase();
@@ -432,7 +422,7 @@ function parseChesscomGame(raw, targetUser) {
     user_rating: user.rating || null,
     opponent: opp.username || '?',
     opponent_rating: opp.rating || null,
-    opponent_title: '', // enriched later
+    opponent_title: '',
     user_accuracy: raw['accuracy_' + userColor] || null,
     opponent_accuracy: raw['accuracy_' + (userColor === 'white' ? 'black' : 'white')] || null,
     user_color: userColor, result: raw.result_color || raw.result || '',
@@ -517,10 +507,10 @@ function showResults(data) {
     const platRating = tcData.user_platform_rating || '—';
 
     let badgeHtml = '<span class="badge badge-accuracy">по точности</span>';
-    if (tcData.has_anchors && tcData.direct analysiss > 0) {
-      badgeHtml = '<span class="badge badge-anchors">' + tcData.direct analysiss + ' ссылки</span>';
+    if (tcData.has_anchors && tcData.direct_anchors > 0) {
+      badgeHtml = '<span class="badge badge-anchors">' + tcData.direct_anchors + ' ссылки</span>';
     } else if (tcData.has_anchors) {
-      badgeHtml = '<span class="badge badge-anchors">' + tcData.total analysiss + ' ссылки</span>';
+      badgeHtml = '<span class="badge badge-anchors">' + tcData.total_anchors + ' ссылки</span>';
     }
 
     card.innerHTML =
@@ -598,79 +588,71 @@ function renderChart(tc) {
         pointBorderWidth: 1.5,
         pointHoverRadius: 6,
         pointHoverBackgroundColor: '#c4b5fd',
-        tension: 0.4,
-        fill: true,
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      animation: {
-        duration: 1200,
-        easing: 'easeInOutQuart',
-      },
       interaction: { intersect: false, mode: 'index' },
       plugins: {
         legend: { display: false },
         tooltip: {
-          backgroundColor: '#1a1a26',
-          titleColor: '#ccc',
-          bodyColor: '#c4b5fd',
+          backgroundColor: 'rgba(10, 10, 15, 0.9)',
+          borderColor: '#3b82f6',
+          borderWidth: 1,
           padding: 10,
-          cornerRadius: 8,
+          titleFont: { size: 14, weight: 'bold' },
+          bodyFont: { size: 13 },
           callbacks: {
-            label: ctx => 'FIDE: ' + (ctx.parsed.y !== null ? Math.round(ctx.parsed.y) : '—')
+            label: function(context) {
+              let label = context.dataset.label || '';
+              if (label) label += ': ';
+              if (context.parsed.y != null) label += context.parsed.y;
+              return label;
+            }
           }
         }
       },
       scales: {
         x: {
-          ticks: { color: '#444', maxTicksLimit: 15, font: { size: 10 } },
-          grid: { color: '#1a1a20', drawBorder: false },
+          grid: { display: false, drawBorder: false },
+          ticks: { color: '#555', font: { size: 11 } }
         },
         y: {
-          ticks: { color: '#444', font: { size: 10 } },
-          grid: { color: '#1a1a20', drawBorder: false },
-          beginAtZero: false,
+          min: 0,
+          grid: { color: 'rgba(255, 255, 255, 0.05)', drawBorder: false },
+          ticks: { color: '#555', font: { size: 11 }, callback: val => Math.round(val) }
         }
       }
     }
   });
 }
 
-function renderReferences(data) {
+// ── Anchors table ─────────────────────────────────────────────
+
+function renderAnchors(data) {
+  if (!data.anchors || data.anchors.length === 0) return;
+
   const tbody = document.getElementById('anchorsBody');
-  const section = document.getElementById('anchorsSection');
   tbody.innerHTML = '';
 
-  const anchors = [];
-  Object.entries(data.time_controls).forEach(([tc, tcData]) => {
-    if (tcData.anchors) {
-      tcData.anchors.forEach(a => anchors.push({ ...a, _tc: tc }));
-    }
+  data.anchors.forEach(anchor => {
+    const row = document.createElement('tr');
+    const date = new Date(anchor.date).toLocaleDateString('ru');
+    const rating = anchor.fide_rating?.toString().padStart(4, ' ');
+    const offset = anchor.adjusted_offset?.toFixed(1);
+
+    row.innerHTML =
+      `<td>${date}</td>
+       <td>${anchor.opponent}</td>
+       <td>${anchor.title || '—'}</td>
+       <td>${anchor.time_class}</td>
+       <td class="fide-col">${rating || '—'}</td>
+       <td class="fide-col">${offset || '—'}</td>
+       <td>${anchor.direct ? 'Прямая' : 'Косвенная'}</td>`;
+
+    tbody.appendChild(row);
   });
 
-  anchors.sort((a, b) => new Date(b.date) - new Date(a.date));
-
-  if (anchors.length === 0) { section.style.display = 'none'; return; }
-  section.style.display = 'block';
-
-  anchors.forEach(a => {
-    const tr = document.createElement('tr');
-    const dt = new Date(a.date);
-    const offsetVal = a.raw_offset !== undefined ? a.raw_offset : (a.offset || 0);
-    tr.innerHTML =
-      '<td>' + (isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('ru')) + '</td>' +
-      '<td>' + (a.opponent || '—') + '</td>' +
-      '<td><b>' + (a.title || '—') + '</b></td>' +
-      '<td>' + (TC_NAMES[a.time_class] || a.time_class || '—') + '</td>' +
-      '<td>' + (a.platform_rating || '—') + '</td>' +
-      '<td class="fide-col">' + (a.fide_rating || '—') + '</td>' +
-      '<td class="offset-col">' + (offsetVal > 0 ? '+' : '') + offsetVal + '</td>' +
-      '<td>' + (a.direct ? 'прямой' : 'косвенный') + '</td>';
-    tbody.appendChild(tr);
-  });
+  document.getElementById('anchorsSection').style.display = 'block';
 }
-</script>
-</body>
-</html>

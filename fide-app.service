@@ -1,0 +1,15 @@
+[Unit]
+Description=FIDE Rating Calculator API
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/fide-app/backend
+Environment="PATH=/opt/fide-app/venv/bin"
+ExecStart=/opt/fide-app/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8200
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
