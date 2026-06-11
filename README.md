@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Ameni_FIDE_Rating_Calculator-v3.0-a78bfa?labelColor=222" alt="FIDE Rating Calculator">
+  <img src="https://img.shields.io/badge/Ameni_FIDE_Rating_Calculator-v3.0.0-a78bfa?labelColor=222" alt="FIDE Rating Calculator">
   <img src="https://img.shields.io/badge/python-3.12+-blue?labelColor=222" alt="Python 3.12+">
   <img src="https://img.shields.io/badge/fastapi-0.136+-05998b?logo=fastapi&labelColor=222" alt="FastAPI">
   <img src="https://img.shields.io/badge/license-MIT-lightgrey?labelColor=222" alt="MIT">
