@@ -1,0 +1,7 @@
+interface:
+  display_name: "Ameni FIDE Rating Calculator"
+  short_description: "Anchor-method FIDE rating estimation via Lichess/Chess.com"
+  default_prompt: "Use $fide-rating-calc to estimate a chess player's FIDE rating from their Lichess or Chess.com games using the Anchor method."
+
+policy:
+  allow_implicit_invocation: true
